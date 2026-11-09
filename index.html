@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>V.I.A. TCG</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0d0f13">
@@ -21,6 +21,10 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{font-size:16px!important}
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+*{scrollbar-width:none}
+*::-webkit-scrollbar{display:none;width:0;height:0}
 .hidden{display:none!important}
 .app{max-width:900px;margin:0 auto;padding:0 14px calc(90px + env(safe-area-inset-bottom))}
 header{position:sticky;top:0;z-index:20;background:rgba(13,15,19,.92);backdrop-filter:blur(10px);
@@ -785,7 +789,12 @@ async function onPhoto(input){
     f.FotoId.value=r.id; fotoCache[r.id]=dataUrl;
     const rm=f.querySelector('[data-act=rm-photo]'); if(rm) rm.classList.remove('hidden');
   }catch(e){ pv.innerHTML='Errore'; toast('Foto non caricata: '+e.message,true); }
-  finally{ input.value=''; validateForm(f); }
+  finally{ input.value=''; btn.disabled=false; refreshForm(f); }
+}
+function refreshForm(f){
+  if(f.id==='f-multi') liveMulti(f);
+  else if(f.id==='f-prod') updateProdForm(f);
+  else validateForm(f);
 }
 function photoBlock(id){
   return '<input type="hidden" name="FotoId" value="'+esc(id||'')+'"><div class="photo"><div class="pv">'+(id?photoTag(id):'Nessuna<br>foto')+'</div><div class="b">'+
@@ -1416,6 +1425,8 @@ document.addEventListener('submit', function(e){
     saveFilters(); closeModal(); render();
   }
 });
+['gesturestart','gesturechange','gestureend'].forEach(function(ev){ document.addEventListener(ev, function(e){ e.preventDefault(); }, {passive:false}); });
+document.addEventListener('touchmove', function(e){ if(e.touches && e.touches.length>1) e.preventDefault(); }, {passive:false});
 document.addEventListener('input', function(e){
   const t=e.target;
   if(t.id==='q-prod'){ S.q=t.value; render(); return; }
@@ -1494,7 +1505,7 @@ document.addEventListener('click', async function(e){
   if(a==='scambio') return formScambio(id);
   if(a==='add-line'){ const box=document.getElementById('lines'); box.insertAdjacentHTML('beforeend', lineCarta(Date.now(), el.getAttribute('data-val')==='1')); const f=box.closest('form'); if(f.id==='f-sc') liveScambio(f); else liveApri(f); return; }
   if(a==='rm-line'){ const f=el.closest('form'); if(f.querySelectorAll('.line').length>1) el.closest('.line').remove(); if(f.id==='f-sc') liveScambio(f); else liveApri(f); return; }
-  if(a==='rm-photo'){ const f=el.closest('form'); f.FotoId.value=''; f.querySelector('.pv').innerHTML='Nessuna<br>foto'; el.classList.add('hidden'); return; }
+  if(a==='rm-photo'){ const f=el.closest('form'); f.FotoId.value=''; f.querySelector('.pv').innerHTML='Nessuna<br>foto'; el.classList.add('hidden'); refreshForm(f); return; }
   if(a==='att-open'){ const k=el.getAttribute('data-key'); return openAllegato(ATT[k].list[+el.getAttribute('data-i')]); }
   if(a==='att-rm'){ if(!confirmBox(el,'Sicuro?')) return; const k=el.getAttribute('data-key'); ATT[k].list.splice(+el.getAttribute('data-i'),1);
     try{ if(ATT[k].onchange) await ATT[k].onchange(ATT[k].list); }catch(err){ toast(err.message,true); } attRender(k); return; }
