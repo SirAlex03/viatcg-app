@@ -26,7 +26,7 @@ html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:10
 *{scrollbar-width:none}
 *::-webkit-scrollbar{display:none;width:0;height:0}
 .hidden{display:none!important}
-.app{max-width:900px;margin:0 auto;padding:0 14px calc(90px + env(safe-area-inset-bottom))}
+.app{max-width:900px;margin:0 auto;padding:0 14px calc(150px + env(safe-area-inset-bottom))}
 header{position:sticky;top:0;z-index:20;background:rgba(13,15,19,.92);backdrop-filter:blur(10px);
   display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;margin:0 -14px 6px;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
@@ -179,6 +179,9 @@ table.piano tr.late td:first-child{color:var(--red)}
   padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .toast.e{background:#3a1b1b;border-color:#5a2a2a}
 .chart svg{width:100%;height:auto;display:block}
+.chart .cm{fill:transparent;cursor:pointer}.chart .cm.on{fill:rgba(255,255,255,.06)}
+.ctip{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.ctip>b{color:var(--text);width:100%}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:6px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .loading{padding:60px 0;text-align:center;color:var(--muted)}
@@ -494,7 +497,7 @@ function vReport(){
   }
   if(late) h+='<div class="card" style="margin-top:10px;border-color:#5a2a2a;color:var(--red)">'+late+' rat'+(late===1?'a scaduta':'e scadute')+' da segnare come pagat'+(late===1?'a':'e')+'. Vai su Prestiti.</div>';
   h+='<h2>Entrate e uscite di cassa · ultimi 12 mesi</h2><div class="card chart">'+chart(c.mesi)+
-     '<div class="legend"><span><i style="background:var(--green)"></i>Entrate</span><span><i style="background:var(--red)"></i>Uscite</span></div></div>';
+     '<div class="legend"><span><i style="background:var(--green)"></i>Entrate</span><span><i style="background:var(--red)"></i>Uscite</span></div><div class="ctip" id="chart-tip">'+chartTip(c.mesi,c.mesi.length-1)+'</div></div>';
   h+='<h2>Conto economico</h2><div class="card rows">'+
     row('Ricavi dalle vendite',eur(c.ricavi))+row('Costo dei pezzi venduti','− '+eur(c.costoVenduto))+
     row('<b>Utile lordo sulle vendite</b>','<span class="'+cls(c.utileLordo)+'">'+eurS(c.utileLordo)+'</span>')+
@@ -518,6 +521,10 @@ function vReport(){
     return '<div class="r"><span><b>'+esc(g.Utente)+'</b> · '+esc(g.Azione)+'<br><span class="small muted">'+esc(g.Dettaglio)+'</span></span><span class="small muted" style="font-weight:400">'+esc(dShort(g.Timestamp))+' '+esc(String(g.Timestamp).slice(11,16))+'</span></div>';}).join('')+'</div>';
   return h;
 }
+function chartTip(mesi,i){
+  const m=mesi[i]; if(!m) return ''; const net=r2(m.in-m.out);
+  return '<b>'+MESI_L[Number(m.m.slice(5,7))-1]+' '+m.m.slice(0,4)+'</b><span>Entrate <b class="pos">+'+eur(m.in)+'</b></span><span>Uscite <b class="neg">−'+eur(m.out)+'</b></span><span>Saldo <b class="'+cls(net)+'">'+eurS(net)+'</b></span>';
+}
 function chart(mesi){
   const W=640,H=220,pl=46,pb=24,pt=10, max=Math.max(1,Math.max.apply(null,mesi.map(function(m){return Math.max(m.in,m.out);})));
   const mag=Math.pow(10,Math.floor(Math.log10(max))), step=[1,2,2.5,5,10].map(function(x){return x*mag;}).filter(function(s){return max/s<=4;})[0]||mag*10;
@@ -527,6 +534,7 @@ function chart(mesi){
   for(let v=0;v<=top+1e-9;v+=step){ s+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#262c38"/><text x="'+(pl-6)+'" y="'+(y(v)+4)+'" text-anchor="end">'+(v>=1000?(v/1000).toLocaleString('it-IT')+'k':v)+'</text>'; }
   mesi.forEach(function(m,i){
     const cx=pl+cw*i+cw/2;
+    s+='<rect class="cm'+(i===mesi.length-1?' on':'')+'" data-act="chart-m" data-i="'+i+'" x="'+(pl+cw*i)+'" y="'+pt+'" width="'+cw+'" height="'+(H-pt)+'" rx="4"/>';
     s+='<rect x="'+(cx-bw-1)+'" y="'+y(m.in)+'" width="'+bw+'" height="'+Math.max(0,y(0)-y(m.in))+'" rx="2" fill="#3fbf6f"><title>Entrate '+eur(m.in)+'</title></rect>';
     s+='<rect x="'+(cx+1)+'" y="'+y(m.out)+'" width="'+bw+'" height="'+Math.max(0,y(0)-y(m.out))+'" rx="2" fill="#ef5b5b"><title>Uscite '+eur(m.out)+'</title></rect>';
     s+='<text x="'+cx+'" y="'+(H-6)+'" text-anchor="middle">'+MESI[Number(m.m.slice(5,7))-1]+'</text>';
@@ -629,16 +637,24 @@ function itemProdotto(p){
   const s=sold(p), c=costo(p), v=Number(p.PrezzoVendita), roi=roiOf(p);
   const sub=[p.Categoria, p.Origine==='SBUSTATA'?'' : (p.CanaleAcquisto?'da '+p.CanaleAcquisto:''), s&&p.CanaleVendita?'→ '+p.CanaleVendita:''].filter(Boolean).join(' · ');
   return '<div class="item" data-act="open-prod" data-id="'+esc(p.ID)+'"><div class="thumb">'+photoTag(p.FotoId)+'</div><div class="main"><div class="t">'+esc(p.Nome)+'</div>'+
-    '<div class="sub">'+esc(sub)+'</div><div class="sub">Acq. '+dShort(p.DataAcquisto)+(s?' · Vend. '+dShort(p.DataVendita):'')+'</div>'+badgesProdotto(p)+'</div>'+
+    '<div class="sub">'+esc(sub)+'</div><div class="sub">Acq. '+dShort(p.DataAcquisto)+(s?' · Vend. '+dShort(p.DataVendita)+(p.IncassatoDa?' · '+esc(p.IncassatoDa==='CASSA'?'cassa comune':p.IncassatoDa):''):'')+'</div>'+badgesProdotto(p)+'</div>'+
     '<div class="right">'+(s?'<div class="amt">'+eur(v)+'</div><div class="small muted">costo '+eur(c)+'</div>'+(roi!==null?'<div class="'+cls(roi)+' small" style="font-weight:700">'+pct(roi)+'</div>':''):
       '<div class="amt">'+eur(c)+'</div><div class="small muted">costo</div>')+'</div></div>';
+}
+function badgesGruppo(g){
+  const cnt={}, ord=['MAGAZZINO','ARRIVO','VENDUTO','APERTO','SCAMBIATO'];
+  g.forEach(function(x){ const s=inArr(x)?'ARRIVO':stato(x); cnt[s]=(cnt[s]||0)+1; });
+  const nI=g.filter(daInc).length;
+  return Object.keys(cnt).sort(function(a,b){return ord.indexOf(a)-ord.indexOf(b);}).map(function(s){
+    return s==='ARRIVO' ? '<span class="badge b">'+cnt[s]+' in arrivo</span>' : '<span class="badge '+STATI[s][1]+'">'+cnt[s]+' '+STATI[s][0].toLowerCase()+'</span>'; }).join('')+
+    (nI?'<span class="badge y">'+nI+' da incassare</span>':'');
 }
 function itemGruppo(g){
   const p=g[0], foto=g.filter(function(x){return x.FotoId;})[0], cnt={};
   g.forEach(function(x){ const s=stato(x); cnt[s]=(cnt[s]||0)+1; });
   const tot=g.reduce(function(a,x){return a+costo(x);},0), inc=g.filter(sold).reduce(function(a,x){return a+Number(x.PrezzoVendita);},0);
   return '<div class="item" data-act="open-grp" data-nome="'+esc(p.Nome)+'"><div class="thumb">'+photoTag(foto&&foto.FotoId)+'<span class="n">×'+g.length+'</span></div><div class="main"><div class="t">'+esc(p.Nome)+'</div>'+
-    '<div class="sub">'+esc(p.Categoria)+' · '+g.length+' pezzi</div><div class="badges">'+Object.keys(cnt).map(function(s){return '<span class="badge '+STATI[s][1]+'">'+cnt[s]+' '+STATI[s][0].toLowerCase()+'</span>';}).join('')+'</div></div>'+
+    '<div class="sub">'+esc(p.Categoria)+' · '+g.length+' pezzi</div><div class="badges">'+badgesGruppo(g)+'</div></div>'+
     '<div class="right"><div class="amt">'+eur(tot)+'</div><div class="small muted">costo totale</div>'+(inc?'<div class="small pos" style="font-weight:700">incassati '+eur(inc)+'</div>':'')+'</div></div>';
 }
 
@@ -928,7 +944,7 @@ function openGruppo(nome, keep){
     const cnt={}; g.forEach(function(x){ const s=stato(x); cnt[s]=(cnt[s]||0)+1; });
     const tot=g.reduce(function(a,x){return a+costo(x);},0), v=g.filter(sold), inc=v.reduce(function(a,x){return a+Number(x.PrezzoVendita);},0), ris=v.reduce(function(a,x){return a+Number(x.PrezzoVendita)-costo(x);},0);
     let h='<div class="small muted">'+g.length+' pezzi · costo totale '+eur(tot)+(v.length?' · incassati '+eur(inc)+' · guadagno <b class="'+cls(ris)+'">'+eurS(r2(ris))+'</b>':'')+'</div>'+
-      '<div class="badges" style="margin:8px 0 12px">'+Object.keys(cnt).map(function(s){return '<span class="badge '+STATI[s][1]+'">'+cnt[s]+' '+STATI[s][0].toLowerCase()+'</span>';}).join('')+'</div>';
+      '<div class="badges" style="margin:8px 0 12px">'+badgesGruppo(g)+'</div>';
     if(!SEL.on){
       h+='<div class="actions" style="margin:0 0 12px"><button class="btn pri" data-act="sel-on">Seleziona</button><button class="btn" data-act="copia-prod" data-id="'+esc(g[0].ID)+'">Aggiungi pezzi uguali</button></div>';
       return h+'<div class="list">'+g.map(itemProdotto).join('')+'</div>';
@@ -982,9 +998,15 @@ function formMulti(ids){
     h+='</fieldset>';
   }
   h+=txt('Note','Note','Note');
+  const mag=P.filter(function(p){return stato(p)==='MAGAZZINO';}), nArr=mag.filter(function(p){return p.InArrivo===true;}).length;
+  if(mag.length){
+    const misti=nArr>0 && nArr<mag.length;
+    h+=swHtml('GiaArrivato','Arrivati',nArr===0,misti?nArr+' in arrivo e '+(mag.length-nArr)+' già arrivati: tocca per segnarli tutti uguali':(nArr?'Tutti ancora in arrivo':'Tutti in magazzino'))+
+      '<div id="m-arr-d" class="hidden">'+fld('Data di arrivo',inp('DataArrivoMulti',today(),'type="date"'))+'</div>';
+  }
   h+='<div class="live" id="m-live"></div><div class="err" id="f-err"></div><div class="actions"><button class="btn pri" type="submit">Applica a '+P.length+' pezzi</button></div>'+nomiDatalist()+'</form>';
   openModal('Modifica '+P.length+' pezzi',h);
-  const f=document.getElementById('f-multi'); f._ids=ids; f._acq=acq.length; f._init=formData(f); liveMulti(f);
+  const f=document.getElementById('f-multi'); f._ids=ids; f._acq=acq.length; f._init=formData(f); f._mag=P.filter(function(p){return stato(p)==='MAGAZZINO';}).map(function(p){return p.ID;}); f._arrTouched=false; liveMulti(f);
 }
 function multiChanges(f){
   const o=formData(f), init=f._init, fields={};
@@ -1001,10 +1023,21 @@ function liveMulti(f){
   const modo=(f.querySelector('input[name=PrezzoModo]:checked')||{}).value||'';
   const mp=document.getElementById('m-prezzo'); if(mp) mp.classList.toggle('hidden', !modo);
   f.querySelectorAll('[data-canale]').forEach(function(s){ const i=f[s.name+'__new']; if(i) i.classList.toggle('hidden', s.value!=='__new__'); });
-  const ch=multiChanges(f), n=Object.keys(ch.fields).length;
+  const ch=multiChanges(f), n=Object.keys(ch.fields).length, ar=arrivoMulti(f);
+  const md=document.getElementById('m-arr-d'); if(md) md.classList.toggle('hidden', !(ar && ar.arrivato));
   let t=n?'Verranno cambiati: <b>'+Object.keys(ch.fields).map(function(k){return NOMI_CAMPI[k]||k.toLowerCase();}).join(', ')+'</b>':'<span class="muted">Nessun campo modificato.</span>';
   if(ch.prezzo && ch.prezzo.valore!=null) t+='<br>Prezzo: '+(ch.prezzo.modo==='totale'?eur(ch.prezzo.valore)+' diviso tra '+f._acq+' pezzi ('+eur(ch.prezzo.valore/f._acq)+' circa a pezzo)':eur(ch.prezzo.valore)+' a pezzo (totale '+eur(ch.prezzo.valore*f._acq)+')');
+  if(ar) t+='<br>'+(ar.arrivato?'Segnati come <b>arrivati</b>: ':'Segnati come <b>in arrivo</b>: ')+ar.ids.length+' pezz'+(ar.ids.length===1?'o':'i')+(ar.esclusi?' ('+ar.esclusi+' esclusi perché già aperti o inviati a gradare)':'');
+  if(n || (ch.prezzo && ch.prezzo.valore!=null) || ar) t=t.replace('<span class="muted">Nessun campo modificato.</span><br>','');
   document.getElementById('m-live').innerHTML=t;
+}
+function arrivoMulti(f){
+  if(!f.GiaArrivato || !f._arrTouched) return null;
+  const on=f.GiaArrivato.checked, P=f._mag.map(prod).filter(Boolean);
+  if(on){ const ids=P.filter(function(p){return p.InArrivo===true;}).map(function(p){return p.ID;}); return ids.length?{arrivato:true,ids:ids,esclusi:0}:null; }
+  const ok=P.filter(function(p){return p.InArrivo!==true && p.Aperto!==true && p.GradStato!=='INVIATA' && p.GradStato!=='GRADATA';});
+  const tutti=P.filter(function(p){return p.InArrivo!==true;}).length;
+  return ok.length?{arrivato:false,ids:ok.map(function(p){return p.ID;}),esclusi:tutti-ok.length}:null;
 }
 function formVendiMulti(ids){
   const P=ids.map(prod).filter(Boolean), ok=P.filter(function(p){return stato(p)==='MAGAZZINO';});
@@ -1638,10 +1671,19 @@ document.addEventListener('submit', function(e){
   } else if(f.id==='f-multi'){
     const ch=multiChanges(f), err=document.getElementById('f-err');
     if(ch.prezzo && (ch.prezzo.valore===null || ch.prezzo.valore<0)){ err.textContent='Inserisci l\'importo del prezzo (anche 0)'; return; }
-    const al=ATT.multi?ATT.multi.list:[];
-    if(!Object.keys(ch.fields).length && !ch.prezzo && !al.length){ err.textContent='Non hai cambiato nessun campo'; return; }
-    const ids=f._ids;
-    save(f,'modificaMultipla',{ids:ids,fields:ch.fields,prezzo:ch.prezzo,allegati:al},'Aggiornati '+ids.length+' pezzi',function(){ const p=prod(ids[0]); if(p){ SEL.on=false; SEL.ids={}; openGruppo(p.Nome); } });
+    const al=ATT.multi?ATT.multi.list:[], ar=arrivoMulti(f), altro=Object.keys(ch.fields).length || ch.prezzo || al.length;
+    if(!altro && !ar){ err.textContent='Non hai cambiato nessun campo'; return; }
+    const ids=f._ids, fine=function(){ const p=prod(ids[0]); if(p){ SEL.on=false; SEL.ids={}; openGruppo(p.Nome); } };
+    const pArr=ar?{ids:ar.ids,arrivato:ar.arrivato,data:f.DataArrivoMulti.value||today()}:null;
+    if(!altro) return save(f,'arrivo',pArr,ar.arrivato?'Segnati come arrivati':'Segnati come in arrivo',fine);
+    if(!ar) return save(f,'modificaMultipla',{ids:ids,fields:ch.fields,prezzo:ch.prezzo,allegati:al},'Aggiornati '+ids.length+' pezzi',fine);
+    (async function(){
+      const btn=f.querySelector('button[type=submit]'); err.textContent=''; btn.disabled=true;
+      try{ await call('modificaMultipla',{ids:ids,fields:ch.fields,prezzo:ch.prezzo,allegati:al}); }
+      catch(e){ err.textContent=e.message; btn.disabled=false; return; }
+      try{ await call('arrivo',pArr); closeModal(); toast('Aggiornati '+ids.length+' pezzi'); fine(); }
+      catch(e){ err.textContent='Campi aggiornati, ma lo stato di arrivo no: '+e.message; btn.disabled=false; f._init=formData(f); }
+    })();
   } else if(f.id==='f-vmulti'){
     const err=document.getElementById('f-err');
     if(!o.DataVendita||!o.CanaleVendita||!o.IncassatoDa||num(o.valore)===null){ err.textContent='Compila data, canale, chi ha incassato e prezzo'; return; }
@@ -1690,6 +1732,7 @@ document.addEventListener('change', function(e){
   if(t.hasAttribute('data-photo')) return onPhoto(t);
   if(t.hasAttribute('data-att')) return onAttach(t);
   if(t.name==='GiaIncassato'){ const ff=t.closest('form'); if(ff) ff._incTouched=true; }
+  if(t.name==='GiaArrivato'){ const ff=t.closest('form'); if(ff) ff._arrTouched=true; }
   if(t.id==='sort'){ S.sort=t.value; saveFilters(); render(); return; }
   if(t.id==='n-da'||t.id==='n-a'||t.id==='n-sort'){ S.nota[t.id==='n-da'?'da':t.id==='n-a'?'a':'sort']=t.value; saveFilters(); render(); return; }
   if(t.id==='grp'){ S.group=t.checked; saveFilters(); render(); return; }
@@ -1708,8 +1751,13 @@ document.addEventListener('change', function(e){
 });
 document.addEventListener('click', async function(e){
   const el=e.target.closest('[data-act]'); if(!el) return;
+  if(!/^(INPUT|SELECT|TEXTAREA|BUTTON|LABEL)$/.test(e.target.tagName) && el.tagName!=='BUTTON'){
+    const s=window.getSelection();
+    if(s && s.type==='Range' && String(s).trim() && el.contains(s.anchorNode)) return;   // si stava evidenziando del testo
+  }
   const a=el.getAttribute('data-act'), id=el.getAttribute('data-id');
   if(a==='ov'){ if(e.target===el){ closeModal(); if(!S.data) showLogin(); } return; }
+  if(a==='chart-m'){ const i=Number(el.getAttribute('data-i')), c=calc(S.data); document.querySelectorAll('.chart .cm').forEach(function(r){ r.classList.toggle('on', r===el); }); document.getElementById('chart-tip').innerHTML=chartTip(c.mesi,i); return; }
   if(a==='vclose'){ if(e.target===el||el.tagName==='BUTTON') document.getElementById('viewer').innerHTML=''; return; }
   if(a==='close'){ closeModal(); if(!S.data) showLogin(); return; }
   if(a==='tab'){ S.tab=el.getAttribute('data-tab'); store.set('tab',S.tab); render(); window.scrollTo(0,0); return; }
