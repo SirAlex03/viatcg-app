@@ -647,7 +647,8 @@ function badgesGruppo(g){
   const nI=g.filter(daInc).length;
   return Object.keys(cnt).sort(function(a,b){return ord.indexOf(a)-ord.indexOf(b);}).map(function(s){
     return s==='ARRIVO' ? '<span class="badge b">'+cnt[s]+' in arrivo</span>' : '<span class="badge '+STATI[s][1]+'">'+cnt[s]+' '+STATI[s][0].toLowerCase()+'</span>'; }).join('')+
-    (nI?'<span class="badge y">'+nI+' da incassare</span>':'');
+    (nI?'<span class="badge y">'+nI+' da incassare</span>':'')+
+    Array.from(new Set(g.map(function(x){return x.Lingua;}).filter(Boolean))).map(function(l){return '<span class="badge">'+esc(l)+'</span>';}).join('');
 }
 function itemGruppo(g){
   const p=g[0], foto=g.filter(function(x){return x.FotoId;})[0], cnt={};
