@@ -1,5 +1,5 @@
 /**
- * V.I.A. TCG — Tracker investimento carte e prodotti · versione 3
+ * V.I.A. TCG — Tracker investimento carte e prodotti · versione 3.1
  * Backend Google Apps Script. I dati vivono nel Google Sheet indicato in CONFIG.SPREADSHEET_ID.
  */
 const CONFIG = {
@@ -21,27 +21,27 @@ const SCHEMA = {
     'DataVendita', 'CanaleVendita', 'PrezzoVendita', 'IncassatoDa', 'FotoId', 'Note'].concat(COMMON).concat([
     'LottoID', 'Origine', 'ParentID', 'Condizione', 'Lingua', 'Aperto', 'DataApertura',
     'GradStato', 'GradCasa', 'GradVoto', 'GradCert', 'GradDataInvio', 'GradDataRientro', 'GradCosto', 'GradPagatoDa',
-    'ScambioOutID', 'ScambioInID']),
+    'ScambioOutID', 'ScambioInID', 'InArrivo', 'DataArrivo', 'DaIncassare', 'DataIncasso', 'ImportoIncassato']),
   PrimaNota: ['ID', 'Data', 'Tipo', 'Descrizione', 'Importo', 'Socio', 'Categoria', 'RifProdotto', 'RifPrestito',
     'NumRata', 'QuotaCapitale', 'QuotaInteressi', 'Auto'].concat(COMMON).concat([
-    'PagatoDa', 'RifLotto', 'RifOrigine', 'RifScambio', 'Allegati']),
+    'PagatoDa', 'RifLotto', 'RifOrigine', 'RifScambio', 'Allegati', 'DaIncassare', 'DataIncasso']),
   Prestiti: ['ID', 'Descrizione', 'Banca', 'Importo', 'TassoAnnuo', 'NumRate', 'RataFissa', 'DataErogazione',
     'DataPrimaRata', 'Note'].concat(COMMON),
-  Canali: ['ID', 'Nome', 'Tipo', 'Uso', 'Note'].concat(COMMON),
+  Canali: ['ID', 'Nome', 'Tipo', 'Uso', 'Note'].concat(COMMON).concat(['IncassoDifferito']),
   Scambi: ['ID', 'Data', 'Controparte', 'Conguaglio', 'PagatoDa', 'Note'].concat(COMMON),
   Log: ['Timestamp', 'Utente', 'Azione', 'Foglio', 'ID', 'Dettaglio'],
   Soci: ['Socio', 'PIN', 'DaCambiare', 'UltimaModifica', 'TentativiErrati', 'BloccatoFino']
 };
 const DATE_COLS = {
-  Prodotti: ['DataAcquisto', 'DataVendita', 'DataApertura', 'GradDataInvio', 'GradDataRientro'],
-  PrimaNota: ['Data'], Prestiti: ['DataErogazione', 'DataPrimaRata'], Scambi: ['Data']
+  Prodotti: ['DataAcquisto', 'DataVendita', 'DataApertura', 'GradDataInvio', 'GradDataRientro', 'DataArrivo', 'DataIncasso'],
+  PrimaNota: ['Data', 'DataIncasso'], Prestiti: ['DataErogazione', 'DataPrimaRata'], Scambi: ['Data']
 };
 const NUM_COLS = {
-  Prodotti: ['PrezzoAcquisto', 'PrezzoVendita', 'GradCosto'],
+  Prodotti: ['PrezzoAcquisto', 'PrezzoVendita', 'GradCosto', 'ImportoIncassato'],
   PrimaNota: ['Importo', 'NumRata', 'QuotaCapitale', 'QuotaInteressi'],
   Prestiti: ['Importo', 'TassoAnnuo', 'NumRate', 'RataFissa'], Scambi: ['Conguaglio']
 };
-const BOOL_COLS = ['Archiviato', 'Auto', 'Aperto', 'DaCambiare'];
+const BOOL_COLS = ['Archiviato', 'Auto', 'Aperto', 'DaCambiare', 'InArrivo', 'DaIncassare', 'IncassoDifferito'];
 const TEXT_COLS = ['ID', 'LottoID', 'ParentID', 'RifProdotto', 'RifPrestito', 'RifLotto', 'RifOrigine', 'RifScambio',
   'ScambioOutID', 'ScambioInID', 'GradVoto', 'GradCert', 'Allegati', 'PIN', 'BloccatoFino', 'UltimaModifica'];
 
@@ -106,6 +106,8 @@ function api(req) {
         case 'modificaMultipla': result = modificaMultipla_(p, user); break;
         case 'vendiMultipla': result = vendiMultipla_(p, user); break;
         case 'archiviaMultipla': result = archiviaMultipla_(p, user); break;
+        case 'arrivo': result = arrivo_(p, user); break;
+        case 'incasso': result = incasso_(p, user); break;
         case 'apri': result = apri_(p, user); break;
         case 'annullaApertura': result = annullaApertura_(p, user); break;
         case 'gradazione': result = gradazione_(p, user); break;
@@ -349,7 +351,11 @@ function saveProdotto_(p, user) {
     if (incassatori_().indexOf(inc) < 0) err_('Indica chi ha incassato la vendita');
     if (dv < acq.DataAcquisto) err_('La data di vendita è precedente alla data di acquisto');
     vend = { DataVendita: dv, CanaleVendita: cv, PrezzoVendita: prezzoV, IncassatoDa: inc };
+    if (Object.prototype.hasOwnProperty.call(p, 'DaIncassare')) Object.assign(vend, statoIncasso_(p, [prezzoV], dv)[0]);
+    else if (ex && isSold_(ex)) Object.assign(vend, ex.DaIncassare === true ? statoIncasso_({ DaIncassare: true }, [prezzoV], dv)[0]
+      : statoIncasso_({ DaIncassare: false, DataIncasso: ex.DataIncasso || dv, ImportoIncassato: ex.ImportoIncassato === '' ? '' : Math.min(Number(ex.ImportoIncassato), prezzoV) }, [prezzoV], dv)[0]);
   }
+  if (prezzoV === '') Object.assign(vend, { DaIncassare: '', DataIncasso: '', ImportoIncassato: '' });
 
   const ids = [];
   if (!ex) {
@@ -369,6 +375,7 @@ function saveProdotto_(p, user) {
     const lotto = newId_('T');
     for (let i = 0; i < q; i++) {
       const rec = Object.assign({ ID: newId_('P'), LottoID: lotto, Origine: origine, Aperto: false }, base, acq, vend, grad);
+      if (origine === 'ACQUISTO' && p.InArrivo === true) { rec.InArrivo = true; rec.DataArrivo = ''; }
       rec.PrezzoAcquisto = origine === 'ACQUISTO' ? prezzi[i] : 0;
       put_('Prodotti', rec, user);
       ids.push(rec.ID);
@@ -379,6 +386,7 @@ function saveProdotto_(p, user) {
     log_(user, 'Nuovo prodotto' + (q > 1 ? ' ×' + q : ''), 'Prodotti', ids[0], nome);
   } else {
     const upd = Object.assign({ ID: ex.ID }, base, acq, vend);
+    if (Object.prototype.hasOwnProperty.call(p, 'InArrivo')) Object.assign(upd, statoArrivo_(ex, p.InArrivo !== true, p.DataArrivo));
     if (origine === 'SBUSTATA') delete upd.PrezzoAcquisto;
     put_('Prodotti', upd, user);
     ids.push(ex.ID);
@@ -435,12 +443,85 @@ function syncLotto_(lotto, user, allegati) {
 
 function syncVendita_(x, user) {
   if (!x) return;
-  if (!isAct_(x) || !isSold_(x)) { autoMov_('VENDITA', 'RifProdotto', x.ID, null, user); return; }
+  if (!isAct_(x) || !isSold_(x)) {
+    autoMov_('VENDITA', 'RifProdotto', x.ID, null, user);
+    autoMov_('SPESA', 'RifProdotto', x.ID, null, user);
+    return;
+  }
+  const daInc = x.DaIncassare === true;
   autoMov_('VENDITA', 'RifProdotto', x.ID, {
     Data: x.DataVendita, Importo: Number(x.PrezzoVendita),
     Descrizione: 'Vendita: ' + x.Nome + (x.CanaleVendita ? ' (' + x.CanaleVendita + ')' : ''),
-    Socio: x.IncassatoDa === 'CASSA' ? '' : x.IncassatoDa
+    Socio: x.IncassatoDa === 'CASSA' ? '' : x.IncassatoDa,
+    DaIncassare: daInc, DataIncasso: daInc ? '' : (x.DataIncasso || x.DataVendita)
   }, user);
+  const comm = (!daInc && x.ImportoIncassato !== '' && x.ImportoIncassato != null) ? r2_(Number(x.PrezzoVendita) - Number(x.ImportoIncassato)) : 0;
+  autoMov_('SPESA', 'RifProdotto', x.ID, comm > 0 ? {
+    Data: x.DataIncasso || x.DataVendita, Importo: comm, Categoria: 'Commissioni piattaforme', PagatoDa: 'CASSA', Socio: '',
+    Descrizione: 'Commissioni: ' + x.Nome + (x.CanaleVendita ? ' (' + x.CanaleVendita + ')' : '')
+  } : null, user);
+}
+
+/* ------------------------------------------------------------------ */
+/* Arrivo della merce e incasso delle vendite                          */
+/* ------------------------------------------------------------------ */
+/** Campi di incasso per una o più vendite. prezzi = prezzi di vendita dei pezzi, nello stesso ordine. */
+function statoIncasso_(p, prezzi, dataVendita) {
+  if (p.DaIncassare === true) return prezzi.map(function () { return { DaIncassare: true, DataIncasso: '', ImportoIncassato: '' }; });
+  const di = date_(p.DataIncasso) || dataVendita;
+  if (dataVendita && di < dataVendita) err_('La data di incasso è precedente alla data di vendita');
+  const totV = r2_(prezzi.reduce(function (a, b) { return a + Number(b); }, 0));
+  const ric = num_(p.ImportoIncassato, 'Importo incassato');
+  if (ric !== '' && ric < 0) err_('Importo incassato non valido');
+  if (ric !== '' && ric > totV + 0.001) err_('L\'importo incassato supera il prezzo di vendita: se hai incassato di più, aumenta il prezzo');
+  let quote;
+  if (ric === '' || prezzi.length === 1 || totV === 0) {
+    quote = prezzi.length === 1 ? [ric === '' ? Number(prezzi[0]) : ric] : (ric === '' ? prezzi.map(Number) : dividi_(ric, prezzi.length));
+  } else {
+    // ripartisce l'incassato in proporzione ai prezzi, resto sull'ultimo
+    let acc = 0;
+    quote = prezzi.map(function (v, i) {
+      if (i === prezzi.length - 1) return r2_(ric - acc);
+      const q = Math.floor(ric * Number(v) / totV * 100) / 100; acc = r2_(acc + q); return q;
+    });
+  }
+  return quote.map(function (q) { return { DaIncassare: false, DataIncasso: di, ImportoIncassato: r2_(q) }; });
+}
+
+function statoArrivo_(x, arrivato, data) {
+  if (arrivato) return { InArrivo: false, DataArrivo: date_(data) || x.DataArrivo || '' };
+  if (x.Aperto === true) err_('"' + x.Nome + '" è già stato aperto: non può essere ancora in arrivo');
+  if (x.GradStato === 'INVIATA' || x.GradStato === 'GRADATA') err_('"' + x.Nome + '" risulta già inviata a gradare');
+  return { InArrivo: true, DataArrivo: '' };
+}
+
+/** Segna più pezzi come arrivati (o di nuovo in arrivo). */
+function arrivo_(p, user) {
+  const pezzi = pezziSelezionati_(p.ids);
+  const arrivato = p.arrivato !== false;
+  const data = arrivato ? (date_(p.data) || today_()) : '';
+  pezzi.forEach(function (x) {
+    if (arrivato && data < x.DataAcquisto) err_('La data di arrivo è precedente all\'acquisto di "' + x.Nome + '"');
+    put_('Prodotti', Object.assign({ ID: x.ID }, statoArrivo_(x, arrivato, data)), user);
+  });
+  log_(user, (arrivato ? 'Arrivati ' : 'In arrivo ') + pezzi.length + ' pezzi', 'Prodotti', pezzi[0].ID, pezzi[0].Nome + (pezzi.length > 1 ? ' e altri' : ''));
+  return { n: pezzi.length };
+}
+
+/** Segna più vendite come incassate (con importo realmente ricevuto) o di nuovo da incassare. */
+function incasso_(p, user) {
+  const pezzi = pezziSelezionati_(p.ids);
+  pezzi.forEach(function (x) { if (!isSold_(x)) err_('"' + x.Nome + '" non risulta venduto'); });
+  const incassato = p.incassato !== false;
+  const maxDV = pezzi.map(function (x) { return x.DataVendita; }).sort().pop();
+  const stati = statoIncasso_({ DaIncassare: !incassato, DataIncasso: p.data || today_(), ImportoIncassato: p.importo },
+    pezzi.map(function (x) { return Number(x.PrezzoVendita); }), maxDV);
+  pezzi.forEach(function (x, i) {
+    put_('Prodotti', Object.assign({ ID: x.ID }, stati[i]), user);
+    syncVendita_(get_('Prodotti', x.ID), user);
+  });
+  log_(user, (incassato ? 'Incassate ' : 'Da incassare ') + pezzi.length + ' vendite', 'Prodotti', pezzi[0].ID, pezzi[0].Nome + (pezzi.length > 1 ? ' e altri' : ''));
+  return { n: pezzi.length };
 }
 
 /* ------------------------------------------------------------------ */
@@ -449,6 +530,7 @@ function syncVendita_(x, user) {
 function apriSeServe_(parent, data, user) {
   if (parent.Aperto === true) return;
   if (!inMagazzino_(parent)) err_('Il prodotto sigillato non è disponibile in magazzino');
+  if (parent.InArrivo === true) err_('"' + parent.Nome + '" non è ancora arrivato: segnalo come arrivato prima di aprirlo');
   put_('Prodotti', { ID: parent.ID, Aperto: true, DataApertura: data }, user);
 }
 
@@ -523,6 +605,7 @@ function gradazione_(p, user) {
     return { id: x.ID };
   }
   if (GRAD_STATI.indexOf(stato) < 0) err_('Stato della gradazione non valido');
+  if (x.InArrivo === true && stato !== 'DA_INVIARE') err_('"' + x.Nome + '" non è ancora arrivato: segnalo come arrivato prima di inviarlo a gradare');
   const casa = str_(p.GradCasa);
   if (!casa) err_('Seleziona la casa di gradazione');
   const voto = str_(p.GradVoto);
@@ -838,7 +921,7 @@ function saveCanale_(p, user) {
     if (!old) err_('Canale non trovato');
     nomePrima = old.Nome;
   }
-  const c = put_('Canali', { ID: p.ID || newId_('C'), Nome: nome, Tipo: tipo, Uso: uso, Note: str_(p.Note) }, user);
+  const c = put_('Canali', { ID: p.ID || newId_('C'), Nome: nome, Tipo: tipo, Uso: uso, Note: str_(p.Note), IncassoDifferito: p.IncassoDifferito === true }, user);
   if (nomePrima && nomePrima !== nome) rinominaCanale_(nomePrima, nome, user);
   log_(user, p.ID ? 'Modifica canale' : 'Nuovo canale', 'Canali', c.ID, nome);
   return { id: c.ID };
@@ -964,8 +1047,9 @@ function vendiMultipla_(p, user) {
   if (v === '' || v < 0) err_('Inserisci il prezzo di vendita');
   pezzi.forEach(function (x) { if (dv < x.DataAcquisto) err_('"' + x.Nome + '" risulta acquistato dopo la data di vendita'); });
   const prezzi = p.modo === 'totale' ? dividi_(v, pezzi.length) : pezzi.map(function () { return v; });
+  const inc2 = statoIncasso_({ DaIncassare: p.DaIncassare === true, DataIncasso: p.DataIncasso, ImportoIncassato: p.ImportoIncassato }, prezzi, dv);
   pezzi.forEach(function (x, i) {
-    put_('Prodotti', { ID: x.ID, DataVendita: dv, CanaleVendita: cv, PrezzoVendita: prezzi[i], IncassatoDa: inc }, user);
+    put_('Prodotti', Object.assign({ ID: x.ID, DataVendita: dv, CanaleVendita: cv, PrezzoVendita: prezzi[i], IncassatoDa: inc }, inc2[i]), user);
     syncVendita_(get_('Prodotti', x.ID), user);
   });
   ensureCanale_(cv, 'VENDITA', user);
