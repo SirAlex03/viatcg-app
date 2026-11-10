@@ -53,6 +53,13 @@ h4{margin:16px 2px 8px;font-size:14px;color:var(--gold)}
 .rows .r:last-child{border-bottom:0}
 .rows .r>span:last-child{font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
 .muted{color:var(--muted)}.small{font-size:12px}
+.nfil{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin:0 0 12px}
+.nfil label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.nfil input,.nfil select{box-sizing:border-box;min-width:0;max-width:100%}
+.nfil input[type=date]{width:100%;-webkit-appearance:none;appearance:none;min-height:42px;color-scheme:dark;color:var(--text)}
+.nfil select{grid-column:1/-1;width:100%}
+.nfil .btn{grid-column:1/-1}
+.selbar.five{grid-template-columns:repeat(3,1fr)}
 .toolbar{display:flex;gap:8px;align-items:center;margin:14px 0 10px;flex-wrap:wrap}
 .search{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
 .sel-s{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 10px;max-width:100%}
@@ -240,7 +247,9 @@ const SIGILLATI = ['Box','Display','Booster / bustine','Starter deck','Collectio
 const CATEGORIE_SPESA = ['Fiera / evento','Spedizioni','Commissioni piattaforme','Grading','Materiali (bustine, toploader…)','Trasporti','Abbonamenti','Altro'];
 const CONDIZIONI = [['M','Mint · Perfetta'],['NM','Near Mint · Pressoché perfetta'],['EX','Excellent · Eccellente'],['GD','Good · Buona'],
   ['LP','Light Played · Lievi segni di usura'],['PL','Played · Marcati segni di usura'],['PO','Poor · Scadente']];
-const LINGUE = [['JP','Giapponese'],['EN','Inglese'],['CN','Cinese'],['KR','Coreano'],['FR','Francese'],['IT','Italiano'],['ALTRO','Altra']];
+const LINGUE = [['EN','Inglese'],['JP','Giapponese'],['FR','Francese'],['CN','Cinese']];
+const LINGUE_STORICHE = [['KR','Coreano'],['IT','Italiano'],['ALTRO','Altra']];
+function lingueCon(vals){ const L=LINGUE.slice(); (vals||[]).forEach(function(v){ if(v && !L.some(function(x){return x[0]===v;})) L.push([v,lingLabel(v)]); }); return L; }
 const CASE_GRADING = ['PSA','BGS (Beckett)','CGC','SGC','ACE','TAG','Altro'];
 const GRAD_STATI = [['DA_INVIARE','Da inviare'],['INVIATA','Inviata, in attesa'],['GRADATA','Gradata (rientrata)']];
 const TIPI_CANALE = ['Negozio','Sito / piattaforma','Privato','Fiera / evento','Altro'];
@@ -264,9 +273,10 @@ const S = {
   pin: store.get('pin') || '', user: store.get('user') || '',
   soci: ['Alex','Vitto','Ivo'], data: null, tab: store.get('tab') || 'report',
   f: Object.assign({}, F0, loadJSON('f', {})), q: '', sort: store.get('sort') || 'acq_desc', group: store.get('group') !== '0',
-  fNota: 'tutti', openLoans: {}, canaliOff: false
+  fNota: 'tutti', openLoans: {}, canaliOff: false,
+  nota: Object.assign({da:'',a:'',sort:'data_desc'}, loadJSON('nota', {}))
 };
-function saveFilters(){ store.set('f', JSON.stringify(S.f)); store.set('sort', S.sort); store.set('group', S.group?'1':'0'); }
+function saveFilters(){ store.set('nota', JSON.stringify(S.nota)); store.set('f', JSON.stringify(S.f)); store.set('sort', S.sort); store.set('group', S.group?'1':'0'); }
 
 /* ================================================================== */
 /* Server                                                              */
@@ -337,7 +347,7 @@ function prod(id){ return S.data.prodotti.filter(function(x){return x.ID===id;})
 function mov(id){ return S.data.primaNota.filter(function(x){return x.ID===id;})[0]; }
 function pagLabel(v){ return !v||v==='CASSA'?'Cassa comune':v==='TUTTI'?'Tutti e 3 i soci':v; }
 function condLabel(c){ const x=CONDIZIONI.filter(function(z){return z[0]===c;})[0]; return x?x[1]:c; }
-function lingLabel(c){ const x=LINGUE.filter(function(z){return z[0]===c;})[0]; return x?x[1]:c; }
+function lingLabel(c){ const x=LINGUE.concat(LINGUE_STORICHE).filter(function(z){return z[0]===c;})[0]; return x?x[1]:c; }
 function gradLabel(p){ if(!p.GradStato) return ''; if(p.GradStato==='GRADATA') return (p.GradCasa||'').split(' ')[0]+' '+(p.GradVoto||''); return (p.GradStato==='DA_INVIARE'?'Da inviare a ':'In gradazione · ')+(p.GradCasa||'').split(' ')[0]; }
 function allegati(m){ try{ return m && m.Allegati ? JSON.parse(m.Allegati) : []; }catch(e){ return []; } }
 function lottoMov(lotto){ return S.data.primaNota.filter(function(m){ return act(m) && m.Auto===true && m.Tipo==='ACQUISTO' && m.RifLotto===lotto; })[0]; }
@@ -613,25 +623,38 @@ function matchNota(m,f){
     (f==='inv'&&m.Tipo==='ACQUISTO') || (f==='vend'&&m.Tipo==='VENDITA') || (f==='spese'&&m.Tipo==='SPESA') || (f==='grad'&&m.Tipo==='GRADING') ||
     (f==='sc'&&m.Tipo.indexOf('CONGUAGLIO')===0) || (f==='prest'&&(m.Tipo==='EROGAZIONE'||m.Tipo==='RATA')) || (f==='att'&&allegati(m).length>0);
 }
+const SORT_NOTA=[['data_desc','Data: più recenti'],['data_asc','Data: più vecchi'],['imp_desc','Importo: dal più alto'],['imp_asc','Importo: dal più basso']];
+function itemMov(m){
+  const t=TIPI[m.Tipo], na=allegati(m).length;
+  const chi = m.Tipo==='VERSAMENTO'||m.Tipo==='PRELIEVO' ? pagLabel(m.Socio) : (m.PagatoDa && m.PagatoDa!=='CASSA' ? 'pagato da '+pagLabel(m.PagatoDa) : (m.Socio?m.Socio:''));
+  const extra=m.Tipo==='RATA'?'capitale '+eur(m.QuotaCapitale)+' · interessi '+eur(m.QuotaInteressi):'';
+  return '<div class="item" data-act="open-mov" data-id="'+esc(m.ID)+'"><div class="main"><div class="t">'+esc(m.Descrizione||t.l)+'</div>'+
+    '<div class="sub">'+dShort(m.Data)+(chi?' · '+esc(chi):'')+(m.Categoria?' · '+esc(m.Categoria):'')+(extra?' · '+extra:'')+'</div>'+
+    '<div class="badges"><span class="badge '+t.c+'">'+t.l+(m.Auto===true?' · auto':'')+'</span>'+(na?'<span class="badge">'+I.clip+' '+na+'</span>':'')+'</div></div>'+
+    '<div class="right"><div class="amt '+(t.s>0?'pos':'neg')+'">'+(t.s>0?'+':'−')+' '+eur(m.Importo)+'</div></div></div>';
+}
 function vNota(){
-  const all=S.data.primaNota.filter(act).filter(function(m){return TIPI[m.Tipo];});
-  const L=all.filter(function(m){return matchNota(m,S.fNota);}).sort(function(a,b){ return a.Data===b.Data ? (b.CreatoIl>a.CreatoIl?1:-1) : (b.Data>a.Data?1:-1); });
+  const N=S.nota, all=S.data.primaNota.filter(act).filter(function(m){return TIPI[m.Tipo];});
+  const byDate=function(a,b){ return a.Data===b.Data ? (b.CreatoIl>a.CreatoIl?1:-1) : (b.Data>a.Data?1:-1); };
+  const L=all.filter(function(m){ return matchNota(m,S.fNota) && (!N.da || String(m.Data)>=N.da) && (!N.a || String(m.Data)<=N.a); })
+    .sort(function(a,b){
+      if(N.sort==='imp_desc') return (Number(b.Importo)-Number(a.Importo)) || byDate(a,b);
+      if(N.sort==='imp_asc') return (Number(a.Importo)-Number(b.Importo)) || byDate(a,b);
+      return N.sort==='data_asc' ? -byDate(a,b) : byDate(a,b);
+    });
   let h='<div class="toolbar"><div class="seg" style="width:100%">'+FILTRI_NOTA.map(function(f){
     return '<button data-act="fnota" data-f="'+f[0]+'" class="'+(S.fNota===f[0]?'on':'')+'">'+f[1]+'</button>'; }).join('')+'</div></div>';
-  if(!L.length) return h+'<div class="empty">'+(all.length?'Nessun movimento con questo filtro.':'Nessun movimento.')+'</div>';
-  const groups={}; L.forEach(function(m){ const k=String(m.Data).slice(0,7); (groups[k]=groups[k]||[]).push(m); });
-  Object.keys(groups).sort().reverse().forEach(function(k){
+  h+='<div class="nfil"><label>Dal<input type="date" id="n-da" class="sel-s" value="'+esc(N.da)+'"></label><label>Al<input type="date" id="n-a" class="sel-s" value="'+esc(N.a)+'"></label>'+
+    '<select id="n-sort" class="sel-s">'+SORT_NOTA.map(function(o){return '<option value="'+o[0]+'"'+(N.sort===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'+
+    ((N.da||N.a)?'<button class="btn sm" data-act="n-clear">Tutte le date</button>':'')+'</div>';
+  if(!L.length) return h+'<div class="empty">'+(all.length?'Nessun movimento con questi filtri.':'Nessun movimento.')+'</div>';
+  const ent=L.reduce(function(a,m){return a+(TIPI[m.Tipo].s>0?Number(m.Importo):0);},0), usc=L.reduce(function(a,m){return a+(TIPI[m.Tipo].s<0?Number(m.Importo):0);},0);
+  h+='<div class="small muted" style="margin:0 2px 10px">'+L.length+' moviment'+(L.length===1?'o':'i')+' · entrate <b class="pos">+'+eur(ent)+'</b> · uscite <b class="neg">−'+eur(usc)+'</b> · saldo <b class="'+cls(ent-usc)+'">'+eurS(r2(ent-usc))+'</b></div>';
+  if(N.sort==='imp_desc' || N.sort==='imp_asc') return h+'<div class="list">'+L.map(itemMov).join('')+'</div>';
+  const groups={}, order=[]; L.forEach(function(m){ const k=String(m.Data).slice(0,7); if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(m); });
+  order.forEach(function(k){
     const g=groups[k], net=g.reduce(function(s,m){return s+TIPI[m.Tipo].s*Number(m.Importo);},0);
-    h+='<div class="month"><span>'+MESI_L[Number(k.slice(5,7))-1]+' '+k.slice(0,4)+'</span><span class="'+cls(net)+'">'+eurS(r2(net))+'</span></div><div class="list">';
-    h+=g.map(function(m){
-      const t=TIPI[m.Tipo], na=allegati(m).length;
-      const chi = m.Tipo==='VERSAMENTO'||m.Tipo==='PRELIEVO' ? pagLabel(m.Socio) : (m.PagatoDa && m.PagatoDa!=='CASSA' ? 'pagato da '+pagLabel(m.PagatoDa) : (m.Socio?m.Socio:''));
-      const extra=m.Tipo==='RATA'?'capitale '+eur(m.QuotaCapitale)+' · interessi '+eur(m.QuotaInteressi):'';
-      return '<div class="item" data-act="open-mov" data-id="'+esc(m.ID)+'"><div class="main"><div class="t">'+esc(m.Descrizione||t.l)+'</div>'+
-        '<div class="sub">'+dShort(m.Data)+(chi?' · '+esc(chi):'')+(m.Categoria?' · '+esc(m.Categoria):'')+(extra?' · '+extra:'')+'</div>'+
-        '<div class="badges"><span class="badge '+t.c+'">'+t.l+(m.Auto===true?' · auto':'')+'</span>'+(na?'<span class="badge">'+I.clip+' '+na+'</span>':'')+'</div></div>'+
-        '<div class="right"><div class="amt '+(t.s>0?'pos':'neg')+'">'+(t.s>0?'+':'−')+' '+eur(m.Importo)+'</div></div></div>';
-    }).join('')+'</div>';
+    h+='<div class="month"><span>'+MESI_L[Number(k.slice(5,7))-1]+' '+k.slice(0,4)+'</span><span class="'+cls(net)+'">'+eurS(r2(net))+'</span></div><div class="list">'+g.map(itemMov).join('')+'</div>';
   });
   return h;
 }
@@ -883,8 +906,9 @@ function openGruppo(nome, keep){
       lotti.map(function(l){return '<button class="btn sm" data-act="sel-lot" data-lot="'+esc(l[0])+'">Lotto del '+dShort(l[1])+' ('+l[2]+')</button>';}).join('')+
       '<button class="btn sm" data-act="sel-mag">Solo in magazzino</button><button class="btn sm" data-act="sel-none">Nessuno</button><button class="btn sm dng" data-act="sel-off">Annulla</button></div>';
     h+='<div class="list">'+g.map(itemSel).join('')+'</div>';
-    h+='<div class="selbar"><button class="btn"'+(k?'':' disabled')+' data-act="multi-edit">Modifica ('+k+')</button><button class="btn"'+(k?'':' disabled')+' data-act="multi-sell">Vendi</button>'+
-      '<button class="btn"'+(k?'':' disabled')+' data-act="multi-swap">Scambia</button><button class="btn dng"'+(k?'':' disabled')+' data-act="multi-del">Elimina</button></div>';
+    const carte=!sealed(g[0].Categoria);
+    h+='<div class="selbar'+(carte?' five':'')+'"><button class="btn"'+(k?'':' disabled')+' data-act="multi-edit">Modifica ('+k+')</button><button class="btn"'+(k?'':' disabled')+' data-act="multi-sell">Vendi</button>'+
+      '<button class="btn"'+(k?'':' disabled')+' data-act="multi-swap">Scambia</button>'+(carte?'<button class="btn"'+(k?'':' disabled')+' data-act="multi-grad">Gradazione</button>':'')+'<button class="btn dng"'+(k?'':' disabled')+' data-act="multi-del">Elimina</button></div>';
     return h;
   };
   openModal(esc(nome), draw(), function(){ setModalBody(draw()); });
@@ -907,7 +931,8 @@ function formMulti(ids){
   if(!fx.same) h+='<div class="hint">I pezzi hanno foto diverse: se carichi una foto, verrà usata per tutti.</div>';
   h+=txt('Nome','Nome prodotto','Nome','list="dl-nomi"');
   h+=sl('Categoria','Categoria',CATEGORIE_PROD,'Categoria',null);
-  if(!allSealed) h+='<div class="two">'+sl('Condizione','Condizione',CONDIZIONI,'Condizione','—')+sl('Lingua','Lingua',LINGUE,'Lingua','—')+'</div>';
+  const lingL=lingueCon(P.map(function(p){return p.Lingua;}));
+  h+=allSealed ? sl('Lingua','Lingua',lingL,'Lingua','—') : '<div class="two">'+sl('Condizione','Condizione',CONDIZIONI,'Condizione','—')+sl('Lingua','Lingua',lingL,'Lingua','—')+'</div>';
   if(acq.length){
     h+='<fieldset><legend>Acquisto'+(acq.length!==P.length?' <span class="muted small" style="font-weight:400">(solo sui '+acq.length+' pezzi acquistati)</span>':'')+'</legend>';
     const dx=c('DataAcquisto',acq);
@@ -1005,7 +1030,7 @@ function formProdotto(p, o){
   h+='<div style="height:10px"></div>'+photoBlock(p.FotoId);
   h+=fld('Nome prodotto *',inp('Nome',p.Nome,'list="dl-nomi" placeholder="Es. Booster Box OP-14 giapponese"'),'Nome');
   h+=fld('Categoria *',sel('Categoria',CATEGORIE_PROD,p.Categoria,'— scegli —'),'Categoria');
-  h+='<div id="b-carta" class="two">'+fld('Condizione',sel('Condizione',CONDIZIONI,p.Condizione,'—'))+fld('Lingua',sel('Lingua',LINGUE,p.Lingua,'—'))+'</div>';
+  h+='<div id="b-carta" class="two"><div id="b-cond">'+fld('Condizione',sel('Condizione',CONDIZIONI,p.Condizione,'—'))+'</div>'+fld('Lingua',sel('Lingua',lingueCon([p.Lingua]),p.Lingua,'—'))+'</div>';
   // acquisto
   h+='<fieldset id="b-acq"><legend>Acquisto</legend>';
   h+='<div class="two">'+fld('Data di acquisto *',inp('DataAcquisto',orig==='ACQUISTO'?p.DataAcquisto:today(),'type="date"'),'DataAcquisto');
@@ -1048,7 +1073,8 @@ function updateProdForm(f){
   f.querySelectorAll('#b-modo label').forEach(function(l){ l.classList.toggle('on', l.querySelector('input').checked); });
   document.getElementById('b-acq').classList.toggle('hidden', orig!=='ACQUISTO');
   document.getElementById('b-sbu').classList.toggle('hidden', orig!=='SBUSTATA');
-  document.getElementById('b-carta').classList.toggle('hidden', sealed(cat));
+  document.getElementById('b-cond').classList.toggle('hidden', sealed(cat));
+  document.getElementById('b-carta').classList.toggle('two', !sealed(cat));
   const bg=document.getElementById('b-grad'); if(bg) bg.classList.toggle('hidden', sealed(cat));
   const chk=document.getElementById('chk-grad'); if(chk) document.getElementById('b-grad-f').classList.toggle('hidden', !chk.checked);
   const q=isNew ? (parseInt((orig==='SBUSTATA'?f.QuantitaSbu:f.Quantita).value,10)||1) : 1;
@@ -1149,6 +1175,112 @@ function formGrading(id){
   h+='<div class="err" id="f-err"></div><div class="actions">'+(p.GradStato?'<button type="button" class="btn dng" data-act="grad-rm" data-id="'+esc(id)+'">Rimuovi gradazione</button>':'')+'<button class="btn pri" type="submit">Salva</button></div></form>';
   openModal('Gradazione',h);
   const f=document.getElementById('f-grad'); f._id=id; validateForm(f);
+}
+/* ---------- gradazione di più carte ---------- */
+function gmCandidati(pre){
+  return S.data.prodotti.filter(function(p){ return act(p) && !sealed(p.Categoria) && (stato(p)==='MAGAZZINO' || pre.indexOf(p.ID)>=0); })
+    .sort(function(a,b){ const sa=pre.indexOf(a.ID)>=0?0:1, sb=pre.indexOf(b.ID)>=0?0:1; return sa-sb || a.Nome.localeCompare(b.Nome,'it'); });
+}
+function formGradMulti(preIds){
+  const pre=(preIds||[]).filter(function(id){ const p=prod(id); return p && !sealed(p.Categoria); });
+  const C=gmCandidati(pre), P=pre.map(prod);
+  if(!C.length){ toast('Nessuna carta disponibile da gradare',true); return; }
+  const c=function(k){ return P.length ? comune(P,k) : {same:true,v:''}; };
+  const st=c('GradStato'), ca=c('GradCasa'), di=c('GradDataInvio'), dr=c('GradDataRientro'), pg=c('GradPagatoDa');
+  const giaInGrad=P.some(function(p){return p.GradStato;});
+  let h='<form id="f-gm" autocomplete="off" novalidate>';
+  h+='<div class="small muted">Per un gruppo di carte mandate a gradare insieme: stesse informazioni di invio, costo diviso tra le carte, voto e certificato di ciascuna quando rientrano.</div>';
+  h+='<h4>Carte</h4><input class="search" style="width:100%" id="gm-q" placeholder="Cerca tra le carte…"><div class="pick" id="gm-pick">'+C.map(function(p){
+    return '<label data-n="'+esc(p.Nome.toLowerCase())+'"><input type="checkbox" name="gcarta" value="'+esc(p.ID)+'"'+(pre.indexOf(p.ID)>=0?' checked':'')+'><span style="flex:1">'+esc(p.Nome)+'<br><span class="small muted">'+esc([p.Categoria,p.Condizione,lingLabel(p.Lingua||''),gradLabel(p)].filter(Boolean).join(' · '))+' · acq. '+dShort(p.DataAcquisto)+'</span></span><b class="small">'+eur(costo(p))+'</b></label>';
+  }).join('')+'</div>';
+  h+='<h4>Gradazione</h4>';
+  h+=fld('Stato *',sel('GradStato',GRAD_STATI,st.same&&st.v?st.v:(P.length&&!st.same?'':'DA_INVIARE'),'— scegli —'),'GradStato');
+  h+=fld('Casa di gradazione *',sel('GradCasa',CASE_GRADING,ca.same?ca.v:'','— scegli —'),'GradCasa');
+  h+='<div class="two">'+fld('Data di invio',inp('GradDataInvio',di.same?di.v:'','type="date"'),'GradDataInvio')+fld('Data di rientro',inp('GradDataRientro',dr.same?dr.v:'','type="date"'),'GradDataRientro')+'</div>';
+  if(!di.same||!dr.same) h+='<div class="hint">Le carte hanno date diverse: se lasci una data vuota, ogni carta tiene la sua.</div>';
+  h+='<h4>Costo (con spedizioni)</h4><div class="segf" id="gm-modo">'+(giaInGrad?[['','Non cambiare']]:[]).concat([['totale','Totale da dividere'],['unit','Costo a carta']]).map(function(x,i){
+    return '<label class="'+(i===0?'on':'')+'"><input type="radio" name="CostoModo" value="'+x[0]+'"'+(i===0?' checked':'')+'>'+x[1]+'</label>'; }).join('')+'</div>';
+  h+='<div id="gm-costo"'+(giaInGrad?' class="hidden"':'')+'><div class="two">'+fld('<span id="gm-lbl">Costo totale</span>',money('CostoValore',''),'CostoValore')+fld('Pagato da',sel('GradPagatoDa',pagatori(),pg.same?pg.v:'','— scegli —'),'GradPagatoDa')+'</div></div>';
+  h+='<div id="gm-voti"></div>';
+  h+='<div class="hint">Ricevuta della gradazione (viene collegata a tutte le carte):</div>'+attBox('gradm',[]);
+  h+='<div class="live" id="gm-live"></div><div class="err" id="f-err"></div><div class="actions"><button class="btn pri" type="submit">Salva</button></div></form>';
+  openModal('Gradazione di più carte',h);
+  const f=document.getElementById('f-gm'); f._voti={}; liveGradMulti(f);
+}
+function gmIds(f){ return Array.prototype.map.call(f.querySelectorAll('input[name=gcarta]:checked'),function(i){return i.value;}); }
+function gmSalvaVoti(f){
+  f.querySelectorAll('#gm-voti [data-gid]').forEach(function(r){ f._voti[r.getAttribute('data-gid')]={v:r.querySelector('[name=gv]').value, c:r.querySelector('[name=gc]').value}; });
+}
+function gmCosti(f,ids){
+  const modo=(f.querySelector('input[name=CostoModo]:checked')||{}).value||'', v=num(f.CostoValore.value), n=ids.length;
+  if(!modo) return null;
+  if(v===null || !n) return ids.map(function(){return '';});
+  if(modo==='unit') return ids.map(function(){return v;});
+  const cents=Math.round(v*100), base=Math.floor(cents/n);
+  return ids.map(function(_,i){ return (i===n-1 ? cents-base*(n-1) : base)/100; });
+}
+function liveGradMulti(f){
+  gmSalvaVoti(f);
+  f.querySelectorAll('#gm-modo label').forEach(function(l){ l.classList.toggle('on', l.querySelector('input').checked); });
+  const modo=(f.querySelector('input[name=CostoModo]:checked')||{}).value||'';
+  document.getElementById('gm-costo').classList.toggle('hidden', !modo);
+  document.getElementById('gm-lbl').textContent = modo==='unit' ? 'Costo per carta' : 'Costo totale';
+  const ids=gmIds(f), grad=f.GradStato.value==='GRADATA';
+  let vh='';
+  if(grad && ids.length){
+    vh='<h4>Voto e certificato di ogni carta</h4>'+ids.map(function(id){
+      const p=prod(id), sv=f._voti[id]||{v:p.GradVoto||'',c:p.GradCert||''};
+      return '<div class="line" data-gid="'+esc(id)+'"><div class="small" style="margin-bottom:6px"><b>'+esc(p.Nome)+'</b> <span class="muted">'+esc([p.Condizione,lingLabel(p.Lingua||'')].filter(Boolean).join(' · '))+'</span></div>'+
+        '<div class="two">'+fld('Voto *',inp('gv',sv.v,'placeholder="10"'))+fld('Certificato',inp('gc',sv.c))+'</div></div>';
+    }).join('');
+  }
+  const box=document.getElementById('gm-voti');
+  const ae=document.activeElement, aeG=ae&&ae.closest&&ae.closest('[data-gid]'), aeKey=aeG?[aeG.getAttribute('data-gid'),ae.name]:null;
+  if(box.getAttribute('data-k')!==(grad?'1':'0')+ids.join(',')){ box.innerHTML=vh; box.setAttribute('data-k',(grad?'1':'0')+ids.join(',')); }
+  if(aeKey){ const el=box.querySelector('[data-gid="'+aeKey[0]+'"] [name='+aeKey[1]+']'); if(el && el!==document.activeElement) el.focus(); }
+  const costi=gmCosti(f,ids);
+  let t=ids.length ? '<b>'+ids.length+' cart'+(ids.length===1?'a':'e')+' selezionat'+(ids.length===1?'a':'e')+'</b>' : '<span class="muted">Seleziona le carte.</span>';
+  if(ids.length && costi && costi[0]!=='') { const tot=costi.reduce(function(a,x){return a+x;},0); t+=' · costo '+eur(tot)+(ids.length>1?' ('+(modo==='totale'?'circa '+eur(tot/ids.length):eur(costi[0]))+' a carta)':''); }
+  document.getElementById('gm-live').innerHTML=t;
+}
+function gmPayloads(f){
+  gmSalvaVoti(f);
+  const o=formData(f), ids=gmIds(f), costi=gmCosti(f,ids), m=[];
+  if(!ids.length) throw new Error('Seleziona almeno una carta');
+  if(!o.GradStato) m.push('stato'); if(!o.GradCasa) m.push('casa di gradazione');
+  if(m.length) throw new Error('Da compilare: '+m.join(', '));
+  if(costi && num(f.CostoValore.value)===null) throw new Error('Inserisci il costo, oppure scegli "Non cambiare"');
+  return ids.map(function(id,i){
+    const p=prod(id), v=f._voti[id]||{v:p.GradVoto||'',c:p.GradCert||''};
+    const x={id:id, GradStato:o.GradStato, GradCasa:o.GradCasa,
+      GradVoto:o.GradStato==='GRADATA'?String(v.v||'').trim():(p.GradVoto||''), GradCert:o.GradStato==='GRADATA'?String(v.c||'').trim():(p.GradCert||''),
+      GradDataInvio:o.GradDataInvio||p.GradDataInvio||'', GradDataRientro:o.GradDataRientro||p.GradDataRientro||'',
+      GradCosto:costi?costi[i]:(p.GradCosto===''||p.GradCosto==null?'':Number(p.GradCosto)),
+      GradPagatoDa:costi?o.GradPagatoDa:(p.GradPagatoDa||''), Allegati:ATT.gradm&&ATT.gradm.list.length?ATT.gradm.list:null};
+    if(x.GradStato==='GRADATA' && !x.GradVoto) throw new Error('Manca il voto di "'+p.Nome+'"');
+    if(Number(x.GradCosto)>0){
+      if(!x.GradDataInvio) throw new Error('Inserisci la data di invio (è la data del costo)');
+      if(!x.GradPagatoDa) throw new Error('Indica chi ha pagato la gradazione');
+    }
+    if(x.GradDataInvio && x.GradDataRientro && x.GradDataRientro<x.GradDataInvio) throw new Error('La data di rientro è precedente all\'invio');
+    x._nome=p.Nome; return x;
+  });
+}
+async function salvaGradMulti(f){
+  const err=document.getElementById('f-err'), btn=f.querySelector('button[type=submit]');
+  let L; try{ L=gmPayloads(f); }catch(e){ err.textContent=e.message; return; }
+  err.textContent=''; btn.disabled=true;
+  for(let i=0;i<L.length;i++){
+    btn.textContent='Salvataggio '+(i+1)+' di '+L.length+'…';
+    const x=Object.assign({},L[i]); delete x._nome;
+    try{ await call('gradazione',x); }
+    catch(e){
+      btn.disabled=false; btn.textContent='Riprova';
+      err.textContent=(i?'Salvate '+i+' carte su '+L.length+'. ':'')+'Errore su "'+L[i]._nome+'": '+e.message;
+      return;
+    }
+  }
+  closeModal(); toast('Gradazione salvata su '+L.length+' cart'+(L.length===1?'a':'e'));
 }
 function mancantiGrad(f){
   const o=formData(f), m=[];
@@ -1351,7 +1483,7 @@ function openMenu(){
 }
 function menuNuovo(){
   const it=function(a,t,s){ return '<div class="item" data-act="'+a+'"><div class="main"><div class="t">'+t+'</div><div class="sub">'+s+'</div></div></div>'; };
-  let h='<div class="list">'+it('new-prod','Acquisto di prodotti','Uno o più pezzi, con ricevuta')+it('new-sbu','Carte sbustate da un box','Carte trovate in un prodotto sigillato')+it('scambio','Scambio','Prodotti dati e ricevuti, con eventuale conguaglio');
+  let h='<div class="list">'+it('new-prod','Acquisto di prodotti','Uno o più pezzi, con ricevuta')+it('new-sbu','Carte sbustate da un box','Carte trovate in un prodotto sigillato')+it('scambio','Scambio','Prodotti dati e ricevuti, con eventuale conguaglio')+it('grad-multi','Gradazione di più carte','Carte mandate a gradare insieme, anche diverse');
   if(S.tab!=='prodotti') h+=it('new-mov','Movimento di prima nota','Versamento, prelievo, spesa, altra entrata')+it('new-loan','Prestito','Finanziamento della banca');
   openModal('Aggiungi',h+'</div>');
 }
@@ -1367,6 +1499,7 @@ async function save(form, action, payload, okMsg, after){
 }
 document.addEventListener('submit', function(e){
   const f=e.target; e.preventDefault();
+  if(f.id==='f-gm') return salvaGradMulti(f);
   const o=formData(f);
   if(f.id==='f-prod'){
     f._touched=true; if(!validateForm(f)) return;
@@ -1430,6 +1563,7 @@ document.addEventListener('touchmove', function(e){ if(e.touches && e.touches.le
 document.addEventListener('input', function(e){
   const t=e.target;
   if(t.id==='q-prod'){ S.q=t.value; render(); return; }
+  if(t.id==='gm-q'){ const q=t.value.toLowerCase(); document.querySelectorAll('#gm-pick label').forEach(function(l){ l.classList.toggle('hidden', l.getAttribute('data-n').indexOf(q)<0); }); return; }
   if(t.id==='sc-q'){ const q=t.value.toLowerCase(); document.querySelectorAll('#sc-pick label').forEach(function(l){ l.classList.toggle('hidden', l.getAttribute('data-n').indexOf(q)<0); }); return; }
   const f=t.closest('form'); if(!f) return;
   if(t.name==='l_val') t.removeAttribute('data-auto');
@@ -1441,6 +1575,7 @@ document.addEventListener('input', function(e){
   else if(f.id==='f-sc') liveScambio(f);
   else if(f.id==='f-multi') liveMulti(f);
   else if(f.id==='f-vmulti') liveVendiMulti(f);
+  else if(f.id==='f-gm') liveGradMulti(f);
   else validateForm(f);
 });
 document.addEventListener('change', function(e){
@@ -1448,6 +1583,7 @@ document.addEventListener('change', function(e){
   if(t.hasAttribute('data-photo')) return onPhoto(t);
   if(t.hasAttribute('data-att')) return onAttach(t);
   if(t.id==='sort'){ S.sort=t.value; saveFilters(); render(); return; }
+  if(t.id==='n-da'||t.id==='n-a'||t.id==='n-sort'){ S.nota[t.id==='n-da'?'da':t.id==='n-a'?'a':'sort']=t.value; saveFilters(); render(); return; }
   if(t.id==='grp'){ S.group=t.checked; saveFilters(); render(); return; }
   if(t.id==='can-off'){ S.canaliOff=t.checked; if(MODAL.refresh) MODAL.refresh(); return; }
   const f=t.closest('form'); if(!f) return;
@@ -1458,6 +1594,7 @@ document.addEventListener('change', function(e){
   else if(f.id==='f-apri') liveApri(f);
   else if(f.id==='f-multi') liveMulti(f);
   else if(f.id==='f-vmulti') liveVendiMulti(f);
+  else if(f.id==='f-gm') liveGradMulti(f);
   else validateForm(f);
 });
 document.addEventListener('click', async function(e){
@@ -1473,6 +1610,7 @@ document.addEventListener('click', async function(e){
   if(a==='filtri') return openFiltri();
   if(a==='reset-filtri'){ S.f=Object.assign({},F0); saveFilters(); closeModal(); return render(); }
   if(a==='fnota'){ S.fNota=el.getAttribute('data-f'); return render(); }
+  if(a==='n-clear'){ S.nota.da=''; S.nota.a=''; saveFilters(); return render(); }
   if(a==='fab'){ return S.tab==='prestiti'?formPrestito():S.tab==='nota'?formMovimento():menuNuovo(); }
   if(a==='new-prod') return formProdotto(null);
   if(a==='new-sbu') return formProdotto(null,{origine:'SBUSTATA'});
@@ -1491,6 +1629,8 @@ document.addEventListener('click', async function(e){
     return MODAL.refresh&&MODAL.refresh(); }
   if(a==='multi-edit') return formMulti(selIds());
   if(a==='multi-sell') return formVendiMulti(selIds());
+  if(a==='multi-grad') return formGradMulti(selIds());
+  if(a==='grad-multi') return formGradMulti([]);
   if(a==='multi-swap'){ const ok=selIds().filter(function(i){return stato(prod(i))==='MAGAZZINO';}); if(!ok.length) return toast('Nessuno dei pezzi selezionati è in magazzino',true); return formScambio(ok); }
   if(a==='multi-del'){ if(!confirmBox(el,'Sicuro? ('+selIds().length+')')) return; const ids=selIds(), nome=SEL.nome;
     try{ await call('archiviaMultipla',{ids:ids}); SEL.on=false; SEL.ids={}; toast('Eliminati '+ids.length+' pezzi · recuperabili da Archivio'); if(S.data.prodotti.some(function(p){return act(p)&&p.Nome===nome;})) openGruppo(nome); else closeModal(); }
