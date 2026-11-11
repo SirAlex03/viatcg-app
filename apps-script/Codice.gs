@@ -1,5 +1,5 @@
 /**
- * V.I.A. TCG — Tracker investimento carte e prodotti · versione 3.1
+ * V.I.A. TCG — Tracker investimento carte e prodotti · versione 3.2
  * Backend Google Apps Script. I dati vivono nel Google Sheet indicato in CONFIG.SPREADSHEET_ID.
  */
 const CONFIG = {
@@ -29,8 +29,8 @@ const SCHEMA = {
     'DataPrimaRata', 'Note'].concat(COMMON),
   Canali: ['ID', 'Nome', 'Tipo', 'Uso', 'Note'].concat(COMMON).concat(['IncassoDifferito']),
   Scambi: ['ID', 'Data', 'Controparte', 'Conguaglio', 'PagatoDa', 'Note'].concat(COMMON),
-  Log: ['Timestamp', 'Utente', 'Azione', 'Foglio', 'ID', 'Dettaglio'],
-  Soci: ['Socio', 'PIN', 'DaCambiare', 'UltimaModifica', 'TentativiErrati', 'BloccatoFino']
+  Log: ['Timestamp', 'Utente', 'Azione', 'Foglio', 'ID', 'Dettaglio', 'Cassa'],
+  Soci: ['Socio', 'PIN', 'DaCambiare', 'UltimaModifica', 'TentativiErrati', 'BloccatoFino', 'NovitaLette']
 };
 const DATE_COLS = {
   Prodotti: ['DataAcquisto', 'DataVendita', 'DataApertura', 'GradDataInvio', 'GradDataRientro', 'DataArrivo', 'DataIncasso'],
@@ -39,10 +39,10 @@ const DATE_COLS = {
 const NUM_COLS = {
   Prodotti: ['PrezzoAcquisto', 'PrezzoVendita', 'GradCosto', 'ImportoIncassato'],
   PrimaNota: ['Importo', 'NumRata', 'QuotaCapitale', 'QuotaInteressi'],
-  Prestiti: ['Importo', 'TassoAnnuo', 'NumRate', 'RataFissa'], Scambi: ['Conguaglio']
+  Prestiti: ['Importo', 'TassoAnnuo', 'NumRate', 'RataFissa'], Scambi: ['Conguaglio'], Log: ['Cassa']
 };
 const BOOL_COLS = ['Archiviato', 'Auto', 'Aperto', 'DaCambiare', 'InArrivo', 'DaIncassare', 'IncassoDifferito'];
-const TEXT_COLS = ['ID', 'LottoID', 'ParentID', 'RifProdotto', 'RifPrestito', 'RifLotto', 'RifOrigine', 'RifScambio',
+const TEXT_COLS = ['NovitaLette', 'ID', 'LottoID', 'ParentID', 'RifProdotto', 'RifPrestito', 'RifLotto', 'RifOrigine', 'RifScambio',
   'ScambioOutID', 'ScambioInID', 'GradVoto', 'GradCert', 'Allegati', 'PIN', 'BloccatoFino', 'UltimaModifica'];
 
 const SIGILLATI = ['Box', 'Display', 'Booster / bustine', 'Starter deck', 'Collection / premium'];
@@ -88,11 +88,13 @@ function api(req) {
     const p = req.payload || {};
     if (req.action === 'cambiaPin') return withLock_(function () { cambiaPin_(user, req.pin, p); flush_(); return { ok: true }; });
     if (a.daCambiare) return { ok: false, code: 'CAMBIA_PIN', error: 'Al primo accesso devi scegliere il tuo PIN personale' };
+    if (req.action === 'novitaLette') return withLock_(function () { aggiornaSocio_(socio_(user), { NovitaLette: String(p.versione || '') }); flush_(); return { ok: true }; });
 
     switch (req.action) {
       case 'ping': return { ok: true, soci: CONFIG.SOCI };
       case 'getRev': return { ok: true, rev: getRev_() };
-      case 'getAll': return { ok: true, data: getAll_() };
+      case 'getAll': return { ok: true, data: getAll_(user) };
+      case 'attivita': return { ok: true, attivita: attivita_(p) };
       case 'getFoto': return { ok: true, dataUrl: getFile_(p.id, 'FOTO_FOLDER_ID') };
       case 'getAllegato': return { ok: true, dataUrl: getFile_(p.id, 'RICEVUTE_FOLDER_ID') };
       case 'uploadFoto': return { ok: true, id: uploadFoto_(p, user) };
@@ -101,6 +103,7 @@ function api(req) {
 
     return withLock_(function () {
       let result = null;
+      const cassa0 = cassa_();
       switch (req.action) {
         case 'saveProdotto': result = saveProdotto_(p, user); break;
         case 'modificaMultipla': result = modificaMultipla_(p, user); break;
@@ -122,9 +125,10 @@ function api(req) {
         case 'ripristina': result = setArchiviato_(p.foglio, p.id, false, user); break;
         default: throw new Error('Azione sconosciuta: ' + req.action);
       }
+      segnaCassa_(cassa0);
       flush_();
       bumpRev_();
-      return { ok: true, result: result, data: getAll_() };
+      return { ok: true, result: result, data: getAll_(user) };
     });
   } catch (e) {
     DB_ = {};
@@ -132,7 +136,32 @@ function api(req) {
   }
 }
 
-function getAll_() {
+/** Liquidità in cassa (stessa regola del report: le vendite da incassare non contano). */
+function cassa_() {
+  const S = { VERSAMENTO: 1, PRELIEVO: -1, ACQUISTO: -1, VENDITA: 1, SPESA: -1, ENTRATA: 1, GRADING: -1,
+    CONGUAGLIO_OUT: -1, CONGUAGLIO_IN: 1, EROGAZIONE: 1, RATA: -1 };
+  return r2_(rows_('PrimaNota').reduce(function (a, m) {
+    if (!isAct_(m) || !S[m.Tipo] || (m.Tipo === 'VENDITA' && m.DaIncassare === true)) return a;
+    return a + S[m.Tipo] * (Number(m.Importo) || 0);
+  }, 0));
+}
+
+/** Scrive sulle attività registrate in questa operazione di quanto è cambiata la cassa. */
+function segnaCassa_(cassa0) {
+  const t = DB_.Log; if (!t || !t.added.length) return;
+  const d = r2_(cassa_() - cassa0);
+  t.added[t.added.length - 1].Cassa = Math.abs(d) < 0.005 ? '' : d;
+}
+
+/** Attività più vecchie, a pagine: offset = quante ne hai già, n = quante ancora. */
+function attivita_(p) {
+  const L = rows_('Log'), off = Math.max(0, Number(p.offset) || 0), n = Math.min(100, Math.max(1, Number(p.n) || 20));
+  const fine = L.length - off, inizio = Math.max(0, fine - n);
+  return { righe: L.slice(inizio, fine).reverse().map(pulisci_), altre: inizio > 0 };
+}
+function pulisci_(r) { const o = {}; Object.keys(r).forEach(function (k) { if (k !== '_row') o[k] = r[k]; }); return o; }
+
+function getAll_(user) {
   const clean = function (rows) {
     return rows.map(function (r) { const o = {}; Object.keys(r).forEach(function (k) { if (k !== '_row') o[k] = r[k]; }); return o; });
   };
@@ -145,6 +174,8 @@ function getAll_() {
     canali: clean(rows_('Canali')),
     scambi: clean(rows_('Scambi')),
     log: clean(rows_('Log').slice(-25).reverse()),
+    logTotale: rows_('Log').length,
+    io: { novita: user && socio_(user) ? String(socio_(user).NovitaLette || '') : '' },
     oggi: today_()
   };
 }

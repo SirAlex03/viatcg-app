@@ -59,6 +59,13 @@ h4{margin:16px 2px 8px;font-size:14px;color:var(--gold)}
 .nfil input[type=date]{width:100%;-webkit-appearance:none;appearance:none;min-height:42px;color-scheme:dark;color:var(--text)}
 .nfil select{grid-column:1/-1;width:100%}
 .nfil .btn{grid-column:1/-1}
+.nov{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.nov-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.nov ul{margin:8px 0 0;padding-left:18px}.nov li{margin:5px 0;line-height:1.4}
+.att-day{font-size:12px;color:var(--muted);margin:12px 2px 6px;text-transform:capitalize}
+.att{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.att:first-child{border-top:0}.att .tx{flex:1;min-width:0}.att .tx .small{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.att .rt{text-align:right;flex:none;font-size:12px;color:var(--muted)}.att .rt b{display:block;font-size:13px;margin-top:2px}
 .selbar.five{grid-template-columns:repeat(3,1fr)}
 .selbar .btn.ok{color:var(--green)}
 .toolbar{display:flex;gap:8px;align-items:center;margin:14px 0 10px;flex-wrap:wrap}
@@ -179,6 +186,7 @@ table.piano tr.late td:first-child{color:var(--red)}
   padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .toast.e{background:#3a1b1b;border-color:#5a2a2a}
 .chart svg{width:100%;height:auto;display:block}
+img[data-foto]:not([src]){visibility:hidden}
 .chart .cm{fill:transparent;cursor:pointer}.chart .cm.on{fill:rgba(255,255,255,.06)}
 .ctip{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 .ctip>b{color:var(--text);width:100%}
@@ -309,7 +317,46 @@ function call(action, payload, pinOverride){
       return r;
     });
 }
-function setData(d){ S.data = d; if(d.soci) S.soci = d.soci; render(); }
+function setData(d){ S.data = d; if(d.soci) S.soci = d.soci; render(); controllaNovita(); }
+
+/* ---------- novità della versione ---------- */
+const NOVITA = [
+  {v:'3.2', data:'2026-11-11', titolo:'Attività e novità', punti:[
+    'Nel report c\'è "Attività più recenti": divise per giorno, si toccano per aprire il prodotto o il movimento, e con "Mostra attività precedenti" si va indietro fino all\'inizio.',
+    'Accanto a ogni attività che sposta soldi compare di quanto è cambiata la cassa (es. −173,95 €).',
+    'Dopo ogni aggiornamento compare questo riquadro con le novità. Lo storico è nel menu → Novità.']},
+  {v:'3.1', data:'2026-11-10', titolo:'Merce in arrivo e incassi', punti:[
+    'Acquisti: lo switch "Già arrivato" parte spento. La merce in arrivo ha l\'etichetta blu e si segna arrivata dalla scheda o, per un lotto intero, da Seleziona → Modifica o Seleziona → Arrivati.',
+    'Vendite: lo switch "Già incassato". Sui canali con "Incasso differito" (anagrafica canali) parte spento.',
+    'Quando segnate un incasso scrivete quanto avete ricevuto davvero: la differenza diventa la spesa "Commissioni piattaforme".',
+    'Report: la liquidità in cassa conta solo i soldi incassati. Nuovi riquadri "Da incassare" (con switch per canale) e "Merce in arrivo".',
+    'Anteprima dei lotti con lingua, "in arrivo" e "da incassare"; nell\'anteprima del prodotto venduto c\'è chi ha incassato. Il grafico mostra i dettagli toccando il mese.']},
+  {v:'3.0.1', data:'2026-11-10', titolo:'Gradazioni e prima nota', punti:[
+    'Lingua anche su display e box (Inglese, Giapponese, Francese, Cinese).',
+    'Gradazione di più carte insieme (dal + o da Seleziona → Gradazione): costo totale diviso o a carta, voto e certificato per ogni carta.',
+    'Prima nota con filtro Dal/Al e ordinamento per data o per importo.',
+    'Niente più zoom involontario e niente barra di scorrimento.']},
+  {v:'3.0', data:'2026-11-09', titolo:'La nuova app', punti:[
+    'L\'app si installa sulla schermata Home e si apre a schermo intero.',
+    'Ognuno ha il suo PIN personale, modificabile dal menu.',
+    'Nei lotti: Seleziona per modificare, vendere, scambiare o eliminare più pezzi insieme.']}
+];
+let _novMostrata=false;
+function controllaNovita(){
+  if(_novMostrata || !S.data || !S.data.io || document.querySelector('#modal .ov')) return;
+  _novMostrata=true;
+  if(S.data.io.novita!==NOVITA[0].v) setTimeout(function(){ if(!document.querySelector('#modal .ov')) mostraNovita(true); else _novMostrata=false; }, 500);
+}
+function bloccoNovita(n){
+  return '<div class="nov"><div class="nov-h"><b>Versione '+esc(n.v)+' · '+esc(n.titolo)+'</b><span class="small muted">'+dIt(n.data)+'</span></div><ul>'+n.punti.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div>';
+}
+function mostraNovita(soloNuove){
+  if(soloNuove){
+    const letta=S.data.io.novita, idx=NOVITA.map(function(n){return n.v;}).indexOf(letta);
+    const L=NOVITA.slice(0, idx<0 ? 1 : Math.max(1,idx));
+    openModal('Novità della versione '+NOVITA[0].v, L.map(bloccoNovita).join('')+'<div class="actions"><button class="btn pri" data-act="nov-ok">Ho capito</button></div>');
+  } else openModal('Novità', NOVITA.map(bloccoNovita).join(''));
+}
 let refreshing = false;
 async function refresh(force){
   if(refreshing || !S.data) return;
@@ -516,10 +563,51 @@ function vReport(){
   h+='<h2>Soci · quote 1/'+S.soci.length+'</h2><div class="card scroll-x"><table class="piano"><tr><th>Socio</th><th>Versato netto</th><th>Quota utile</th><th>Spettanza</th></tr>'+
     c.soci.map(function(s){return '<tr><td>'+esc(s.nome)+'</td><td>'+eur(s.netto)+'</td><td class="'+cls(s.quota)+'">'+eurS(s.quota)+'</td><td><b>'+eur(s.spettanza)+'</b></td></tr>';}).join('')+
     '</table><div class="small muted" style="margin-top:8px">Spettanza = quanto ha versato (meno i prelievi) + 1/'+S.soci.length+' dell\'utile netto. I versamenti "tutti e 3" valgono 1/3 a testa.</div></div>';
-  const log=S.data.log||[];
-  if(log.length) h+='<h2>Attività recenti</h2><div class="card rows">'+log.slice(0,8).map(function(g){
-    return '<div class="r"><span><b>'+esc(g.Utente)+'</b> · '+esc(g.Azione)+'<br><span class="small muted">'+esc(g.Dettaglio)+'</span></span><span class="small muted" style="font-weight:400">'+esc(dShort(g.Timestamp))+' '+esc(String(g.Timestamp).slice(11,16))+'</span></div>';}).join('')+'</div>';
+  h+=vAttivita();
   return h;
+}
+const ATTV={n:10, extra:[], altre:null, carica:false};
+function attTutte(){
+  const base=S.data.log||[], seen={}, out=[];
+  base.concat(ATTV.extra).forEach(function(g){ const k=g.Timestamp+'|'+g.Azione+'|'+g.ID+'|'+g.Utente; if(seen[k]) return; seen[k]=1; out.push(g); });
+  return out;
+}
+function nomeGiorno(d){
+  const oggi=S.data.oggi||today(), ieri=(function(){ const x=new Date(oggi+'T12:00:00'); x.setDate(x.getDate()-1); return x.toISOString().slice(0,10); })();
+  if(d===oggi) return 'Oggi'; if(d===ieri) return 'Ieri';
+  const x=new Date(d+'T12:00:00'); return x.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:x.getFullYear()!==new Date().getFullYear()?'numeric':undefined});
+}
+function vAttivita(){
+  const L=attTutte(); if(!L.length) return '';
+  const vis=L.slice(0,ATTV.n), giorni=[], per={};
+  vis.forEach(function(g){ const d=String(g.Timestamp).slice(0,10); if(!per[d]){ per[d]=[]; giorni.push(d); } per[d].push(g); });
+  let h='<h2>Attività più recenti</h2><div class="card">';
+  giorni.forEach(function(d){
+    h+='<div class="att-day">'+nomeGiorno(d)+'</div><div>'+per[d].map(function(g){
+      const c=g.Cassa===''||g.Cassa==null?null:Number(g.Cassa);
+      return '<div class="att" data-act="att-open" data-f="'+esc(g.Foglio||'')+'" data-id="'+esc(g.ID||'')+'"><div class="tx"><b>'+esc(g.Utente)+'</b> · '+esc(g.Azione)+(g.Dettaglio?'<span class="small muted">'+esc(g.Dettaglio)+'</span>':'')+'</div>'+
+        '<div class="rt">'+esc(String(g.Timestamp).slice(11,16))+(c!==null&&!isNaN(c)?'<b class="'+cls(c)+'">'+eurS(c)+'</b><span>cassa</span>':'')+'</div></div>';
+    }).join('')+'</div>';
+  });
+  const tot=S.data.logTotale||L.length, finite = ATTV.altre===false || L.length>=tot;
+  if(ATTV.n<L.length || !finite) h+='<div class="actions" style="margin-top:10px"><button class="btn" data-act="att-more"'+(ATTV.carica?' disabled':'')+'>'+(ATTV.carica?'Caricamento…':'Mostra attività precedenti')+'</button></div>';
+  return h+'</div>';
+}
+async function attAltre(){
+  const L=attTutte();
+  if(ATTV.n+20<=L.length || ATTV.altre===false){ ATTV.n+=20; return render(); }
+  ATTV.carica=true; render();
+  try{ const r=await call('attivita',{offset:L.length,n:40}); ATTV.extra=ATTV.extra.concat(r.attivita.righe); ATTV.altre=r.attivita.altre; ATTV.n+=20; }
+  catch(e){ toast(e.message,true); }
+  ATTV.carica=false; render();
+}
+function attApri(f,id){
+  const nf=function(){ toast('Questo elemento non è più presente (forse archiviato)',true); };
+  if(f==='Prodotti'){ return prod(id) ? openProdotto(id) : nf(); }
+  if(f==='PrimaNota'){ return S.data.primaNota.some(function(m){return m.ID===id;}) ? openMov(id) : nf(); }
+  if(f==='Prestiti'){ S.tab='prestiti'; store.set('tab',S.tab); render(); window.scrollTo(0,0); return; }
+  if(f==='Canali'){ const c=(S.data.canali||[]).filter(function(x){return x.ID===id;})[0]; return c ? formCanale(c) : openCanali(); }
+  if(f==='Scambi') return openScambi();
 }
 function chartTip(mesi,i){
   const m=mesi[i]; if(!m) return ''; const net=r2(m.in-m.out);
@@ -1606,6 +1694,7 @@ function openMenu(){
     '<div class="item" data-act="canali"><div class="main"><div class="t">Anagrafica canali</div><div class="sub">Negozi, siti, privati: aggiungi, rinomina, disattiva</div></div></div>'+
     '<div class="item" data-act="scambi"><div class="main"><div class="t">Scambi</div><div class="sub">Elenco degli scambi e annullamento</div></div></div>'+
     '<div class="item" data-act="archivio"><div class="main"><div class="t">Archivio</div><div class="sub">Elementi eliminati, recuperabili in ogni momento</div></div></div>'+
+    '<div class="item" data-act="novita"><div class="main"><div class="t">Novità</div><div class="sub">Cosa è cambiato in ogni aggiornamento · versione '+NOVITA[0].v+'</div></div></div>'+
     '<div class="item" data-act="pin"><div class="main"><div class="t">Cambia il mio PIN</div><div class="sub">Serve il PIN attuale</div></div></div>'+
     '<div class="item" data-act="switch-user"><div class="main"><div class="t">Cambia utente</div><div class="sub">Ora sei: '+esc(S.user)+'</div></div></div>'+
     '<div class="item" data-act="logout"><div class="main"><div class="t">Esci da questo dispositivo</div><div class="sub">Al prossimo accesso servirà di nuovo il PIN</div></div></div></div>'+
@@ -1758,6 +1847,10 @@ document.addEventListener('click', async function(e){
   }
   const a=el.getAttribute('data-act'), id=el.getAttribute('data-id');
   if(a==='ov'){ if(e.target===el){ closeModal(); if(!S.data) showLogin(); } return; }
+  if(a==='att-more') return attAltre();
+  if(a==='att-open') return attApri(el.getAttribute('data-f'), id);
+  if(a==='novita') return mostraNovita(false);
+  if(a==='nov-ok'){ const v=NOVITA[0].v; closeModal(); S.data.io.novita=v; try{ await call('novitaLette',{versione:v}); }catch(e){} return; }
   if(a==='chart-m'){ const i=Number(el.getAttribute('data-i')), c=calc(S.data); document.querySelectorAll('.chart .cm').forEach(function(r){ r.classList.toggle('on', r===el); }); document.getElementById('chart-tip').innerHTML=chartTip(c.mesi,i); return; }
   if(a==='vclose'){ if(e.target===el||el.tagName==='BUTTON') document.getElementById('viewer').innerHTML=''; return; }
   if(a==='close'){ closeModal(); if(!S.data) showLogin(); return; }
