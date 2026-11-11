@@ -87,7 +87,10 @@ h4{margin:16px 2px 8px;font-size:14px;color:var(--gold)}
 .nov{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .nov-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
 .nov ul{margin:8px 0 0;padding-left:18px}.nov li{margin:5px 0;line-height:1.4}
-.att-day{font-size:12px;color:var(--muted);margin:12px 2px 6px;text-transform:capitalize}
+.att-day{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:16px -14px 4px;padding:8px 14px;background:linear-gradient(90deg,#2a2110,#1a1d24 70%);border-top:1px solid #3a3020;border-bottom:1px solid #3a3020;border-left:3px solid var(--gold)}
+.att-day:first-child{margin-top:-14px;border-top:0;border-radius:var(--radius) var(--radius) 0 0}
+.att-day>b{color:var(--gold2);font-size:14px;text-transform:capitalize}.att-day span{font-size:12px;color:var(--muted);text-align:right}
+.att .rt .lb{display:block;font-size:10.5px;color:var(--muted)}.att .rt .gd{color:var(--gold)}
 .att{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
 .att:first-child{border-top:0}.att .tx{flex:1;min-width:0}.att .tx .small{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .att .rt{text-align:right;flex:none;font-size:12px;color:var(--muted)}.att .rt b{display:block;font-size:13px;margin-top:2px}
@@ -361,7 +364,7 @@ function setData(d){ S.data = d; if(d.soci) S.soci = d.soci; render(); controlla
 const NOVITA = [
   {v:'3.2', data:'2026-11-11', titolo:'Attività e novità', punti:[
     'Nel report c\'è "Attività più recenti": divise per giorno, si toccano per aprire il prodotto o il movimento, e con "Mostra attività precedenti" si va indietro fino all\'inizio.',
-    'Accanto a ogni attività che sposta soldi compare di quanto è cambiata la cassa (es. −173,95 €).',
+    'Accanto a ogni attività che sposta soldi compare l\'importo, con "in cassa" oppure "da incassare". Per le attività passate è ricostruito dai movimenti; ogni giorno è evidenziato con il suo totale.',
     'Dopo ogni aggiornamento compare questo riquadro con le novità. Lo storico è nel menu → Novità.']},
   {v:'3.1', data:'2026-11-10', titolo:'Merce in arrivo e incassi', punti:[
     'Acquisti: lo switch "Già arrivato" parte spento. La merce in arrivo ha l\'etichetta blu e si segna arrivata dalla scheda o, per un lotto intero, da Seleziona → Modifica o Seleziona → Arrivati.',
@@ -650,11 +653,17 @@ function vAttivita(){
   const vis=L.slice(0,ATTV.n), giorni=[], per={};
   vis.forEach(function(g){ const d=String(g.Timestamp).slice(0,10); if(!per[d]){ per[d]=[]; giorni.push(d); } per[d].push(g); });
   let h='<h2>Attività più recenti</h2><div class="card">';
+  const num0=function(v){ const n=v===''||v==null?null:Number(v); return n===null||isNaN(n)||Math.abs(n)<0.005?null:n; };
   giorni.forEach(function(d){
-    h+='<div class="att-day">'+nomeGiorno(d)+'</div><div>'+per[d].map(function(g){
-      const c=g.Cassa===''||g.Cassa==null?null:Number(g.Cassa);
+    const tutte=L.filter(function(g){return String(g.Timestamp).slice(0,10)===d;});
+    const tc=tutte.reduce(function(a,g){return a+(num0(g.Cassa)||0);},0), tk=tutte.reduce(function(a,g){return a+(num0(g.Crediti)||0);},0);
+    const tot=[Math.abs(tc)>=0.005?'cassa <b class="'+cls(tc)+'" style="font-size:12px">'+eurS(r2(tc))+'</b>':'', Math.abs(tk)>=0.005?'da incassare <b class="gd" style="font-size:12px;color:var(--gold)">'+eurS(r2(tk))+'</b>':''].filter(Boolean).join(' · ');
+    h+='<div class="att-day"><b>'+nomeGiorno(d)+'</b><span>'+tutte.length+' attività'+(tot?'<br>'+tot:'')+'</span></div><div>'+per[d].map(function(g){
+      const c=num0(g.Cassa), k=num0(g.Crediti);
       return '<div class="att" data-act="att-open" data-f="'+esc(g.Foglio||'')+'" data-id="'+esc(g.ID||'')+'"><div class="tx"><b>'+esc(g.Utente)+'</b> · '+esc(g.Azione)+(g.Dettaglio?'<span class="small muted">'+esc(g.Dettaglio)+'</span>':'')+'</div>'+
-        '<div class="rt">'+esc(String(g.Timestamp).slice(11,16))+(c!==null&&!isNaN(c)?'<b class="'+cls(c)+'">'+eurS(c)+'</b><span>cassa</span>':'')+'</div></div>';
+        '<div class="rt">'+esc(String(g.Timestamp).slice(11,16))+
+        (c!==null?'<b class="'+cls(c)+'">'+eurS(c)+'</b><span class="lb">in cassa</span>':'')+
+        (k!==null?'<b class="gd">'+eurS(k)+'</b><span class="lb">da incassare</span>':'')+'</div></div>';
     }).join('')+'</div>';
   });
   const tot=S.data.logTotale||L.length, finite = ATTV.altre===false || L.length>=tot;

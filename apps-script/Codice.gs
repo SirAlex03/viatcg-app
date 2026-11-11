@@ -10,7 +10,7 @@ const CONFIG = {
   SPREADSHEET_ID: '1dtjNeu2U6Cx1hSZ0OzFPOhz_jPpZNztVaDpZIHGRMiQ',  // foglio "V.I.A. TCG – dati"
   TZ: 'Europe/Rome'
 };
-const VERSIONE_DATI = '2';
+const VERSIONE_DATI = '3';
 
 /* ------------------------------------------------------------------ */
 /* Struttura dei fogli                                                 */
@@ -29,7 +29,7 @@ const SCHEMA = {
     'DataPrimaRata', 'Note'].concat(COMMON),
   Canali: ['ID', 'Nome', 'Tipo', 'Uso', 'Note'].concat(COMMON).concat(['IncassoDifferito']),
   Scambi: ['ID', 'Data', 'Controparte', 'Conguaglio', 'PagatoDa', 'Note'].concat(COMMON),
-  Log: ['Timestamp', 'Utente', 'Azione', 'Foglio', 'ID', 'Dettaglio', 'Cassa'],
+  Log: ['Timestamp', 'Utente', 'Azione', 'Foglio', 'ID', 'Dettaglio', 'Cassa', 'Crediti'],
   Soci: ['Socio', 'PIN', 'DaCambiare', 'UltimaModifica', 'TentativiErrati', 'BloccatoFino', 'NovitaLette']
 };
 const DATE_COLS = {
@@ -39,7 +39,7 @@ const DATE_COLS = {
 const NUM_COLS = {
   Prodotti: ['PrezzoAcquisto', 'PrezzoVendita', 'GradCosto', 'ImportoIncassato'],
   PrimaNota: ['Importo', 'NumRata', 'QuotaCapitale', 'QuotaInteressi'],
-  Prestiti: ['Importo', 'TassoAnnuo', 'NumRate', 'RataFissa'], Scambi: ['Conguaglio'], Log: ['Cassa']
+  Prestiti: ['Importo', 'TassoAnnuo', 'NumRate', 'RataFissa'], Scambi: ['Conguaglio'], Log: ['Cassa', 'Crediti']
 };
 const BOOL_COLS = ['Archiviato', 'Auto', 'Aperto', 'DaCambiare', 'InArrivo', 'DaIncassare', 'IncassoDifferito'];
 const TEXT_COLS = ['NovitaLette', 'ID', 'LottoID', 'ParentID', 'RifProdotto', 'RifPrestito', 'RifLotto', 'RifOrigine', 'RifScambio',
@@ -103,7 +103,7 @@ function api(req) {
 
     return withLock_(function () {
       let result = null;
-      const cassa0 = cassa_();
+      const cassa0 = cassa_(), crediti0 = crediti_();
       switch (req.action) {
         case 'saveProdotto': result = saveProdotto_(p, user); break;
         case 'modificaMultipla': result = modificaMultipla_(p, user); break;
@@ -125,7 +125,7 @@ function api(req) {
         case 'ripristina': result = setArchiviato_(p.foglio, p.id, false, user); break;
         default: throw new Error('Azione sconosciuta: ' + req.action);
       }
-      segnaCassa_(cassa0);
+      segnaCassa_(cassa0, crediti0);
       flush_();
       bumpRev_();
       return { ok: true, result: result, data: getAll_(user) };
@@ -147,10 +147,65 @@ function cassa_() {
 }
 
 /** Scrive sulle attività registrate in questa operazione di quanto è cambiata la cassa. */
-function segnaCassa_(cassa0) {
+function crediti_() {
+  return r2_(rows_('PrimaNota').reduce(function (a, m) {
+    return (isAct_(m) && m.Tipo === 'VENDITA' && m.DaIncassare === true) ? a + (Number(m.Importo) || 0) : a;
+  }, 0));
+}
+function segnaCassa_(cassa0, crediti0) {
   const t = DB_.Log; if (!t || !t.added.length) return;
-  const d = r2_(cassa_() - cassa0);
-  t.added[t.added.length - 1].Cassa = Math.abs(d) < 0.005 ? '' : d;
+  const d = r2_(cassa_() - cassa0), c = r2_(crediti_() - crediti0), last = t.added[t.added.length - 1];
+  last.Cassa = Math.abs(d) < 0.005 ? '' : d;
+  last.Crediti = Math.abs(c) < 0.005 ? '' : c;
+}
+
+/**
+ * v3: ricostruisce l'effetto su cassa e "da incassare" delle attività registrate prima della v3.2,
+ * abbinando a ogni attività i movimenti creati o archiviati nello stesso momento dallo stesso socio.
+ * Le modifiche di importo fatte in passato non sono ricostruibili e restano senza cifra.
+ */
+function migraV3_() {
+  const SG = { VERSAMENTO: 1, PRELIEVO: -1, ACQUISTO: -1, VENDITA: 1, SPESA: -1, ENTRATA: 1, GRADING: -1,
+    CONGUAGLIO_OUT: -1, CONGUAGLIO_IN: 1, EROGAZIONE: 1, RATA: -1 };
+  const t = tbl_('Log'), L = t.rows;
+  const sec = function (s) { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000 : null; };
+  const idx = L.map(function (g, i) { return { i: i, s: sec(g.Timestamp), u: g.Utente }; }).filter(function (x) { return x.s !== null; });
+  const eff = L.map(function () { return { c: 0, k: 0, n: 0 }; });
+  const assegna = function (quando, chi, c, k) {
+    const s = sec(quando); if (s === null) return;
+    let best = null;
+    idx.forEach(function (x) { if (x.u !== chi) return; const d = x.s - s; if (d >= -3 && d <= 5 && (!best || Math.abs(d) < Math.abs(best.d))) best = { i: x.i, d: d }; });
+    if (best) { eff[best.i].c += c; eff[best.i].k += k; eff[best.i].n++; }
+  };
+  rows_('PrimaNota').forEach(function (m) {
+    const sg = SG[m.Tipo]; if (!sg) return;
+    const imp = Number(m.Importo) || 0;
+    const nuovaPendente = m.Tipo === 'VENDITA' && m.DaIncassare === true && Math.abs((sec(m.ModificatoIl) || 0) - (sec(m.CreatoIl) || 0)) <= 5;
+    assegna(m.CreatoIl, m.CreatoDa, nuovaPendente ? 0 : sg * imp, nuovaPendente ? imp : 0);
+    if (m.Archiviato === true) {
+      const pend = m.Tipo === 'VENDITA' && m.DaIncassare === true;
+      assegna(m.ModificatoIl, m.ModificatoDa, pend ? 0 : -sg * imp, pend ? -imp : 0);
+    }
+  });
+  // vendite spostate tra "incassato" e "da incassare"
+  const vend = {};
+  rows_('PrimaNota').forEach(function (m) { if (isAct_(m) && m.Tipo === 'VENDITA' && m.RifProdotto) vend[m.RifProdotto] = Number(m.Importo) || 0; });
+  L.forEach(function (g, i) {
+    const imp = vend[g.ID]; if (imp == null) return;
+    if (/^Da incassare 1 vendit/.test(g.Azione)) { eff[i].c -= imp; eff[i].k += imp; eff[i].n++; }
+    if (/^Incassate 1 vendit/.test(g.Azione)) { eff[i].c += imp; eff[i].k -= imp; eff[i].n++; }
+  });
+  let n = 0;
+  L.forEach(function (g, i) {
+    if (!eff[i].n || (g.Cassa !== '' && g.Cassa != null) || (g.Crediti !== '' && g.Crediti != null)) return;
+    const c = r2_(eff[i].c), k = r2_(eff[i].k);
+    if (Math.abs(c) < 0.005 && Math.abs(k) < 0.005) return;
+    g.Cassa = Math.abs(c) < 0.005 ? '' : c; g.Crediti = Math.abs(k) < 0.005 ? '' : k;
+    if (g._row) t.dirty[g._row] = g;
+    n++;
+  });
+  return ['Attività passate con importo ricostruito: ' + n];
 }
 
 /** Attività più vecchie, a pagine: offset = quante ne hai già, n = quante ancora. */
@@ -1272,8 +1327,10 @@ function setup() {
   seedSoci_();
   const props = PropertiesService.getScriptProperties();
   let report = [];
-  if (props.getProperty('VERSIONE_DATI') !== VERSIONE_DATI) {
-    report = migraV2_();
+  const vd = props.getProperty('VERSIONE_DATI') || '1';
+  if (vd !== VERSIONE_DATI) {
+    if (vd < '2') report = report.concat(migraV2_());
+    if (vd < '3') report = report.concat(migraV3_());
     flush_();
     props.setProperty('VERSIONE_DATI', VERSIONE_DATI);
   }
