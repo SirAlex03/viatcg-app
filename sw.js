@@ -1,5 +1,5 @@
 // V.I.A. TCG — service worker: l'app si apre anche con rete debole; i dati arrivano sempre dal server.
-const CACHE = 'viatcg-v3.6';
+const CACHE = 'viatcg-v3.7';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }));
