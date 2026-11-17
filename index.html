@@ -1989,7 +1989,7 @@ document.addEventListener('click', async function(e){
   if(a==='chart-m'){ const i=Number(el.getAttribute('data-i')), c=calc(S.data); document.querySelectorAll('.chart .cm').forEach(function(r){ r.classList.toggle('on', r===el); }); document.getElementById('chart-tip').innerHTML=chartTip(c.mesi,i); return; }
   if(a==='vclose'){ if(e.target===el||el.tagName==='BUTTON') document.getElementById('viewer').innerHTML=''; return; }
   if(a==='close'){ closeModal(); if(!S.data) showLogin(); return; }
-  if(a==='tab'){ S.tab=el.getAttribute('data-tab'); store.set('tab',S.tab); render(); window.scrollTo(0,0); return; }
+  if(a==='tab'){ S.tab=el.getAttribute('data-tab'); store.set('tab',S.tab); render(); window.scrollTo(0,0); riallineaPresto(); return; }
   if(a==='refresh') return refresh(true);
   if(a==='fstato'){ S.f.stato=el.getAttribute('data-f'); saveFilters(); return render(); }
   if(a==='rmf'){ S.f[el.getAttribute('data-k')]=''; saveFilters(); return render(); }
